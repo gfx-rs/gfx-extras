@@ -1,0 +1,29 @@
+[package]
+name = "gfx-memory"
+version = "0.1.0"
+authors = [
+	"omni-viral <scareaangel@gmail.com>",
+	"The Gfx-rs Developers",
+]
+edition = "2018"
+repository = "https://github.com/gfx-rs/gfx-extras"
+license = "MIT OR Apache-2.0"
+documentation = "https://docs.rs/gfx-descriptor"
+keywords = ["graphics", "gfx-hal"]
+categories = ["rendering"]
+description = "fx-hal memory allocator"
+
+[features]
+serde = ["serde_", "hal/serde"]
+
+[dependencies]
+colorful = { version = "0.2", optional = true }
+fxhash = "0.2"
+hal = { package = "gfx-hal", version = "0.5" }
+hibitset = {version = "0.6", default-features = false}
+log = "0.4"
+serde_ = { package = "serde", version = "1", features = ["derive"], optional = true }
+slab = "0.4"
+
+[dev-dependencies]
+rand = "0.7"

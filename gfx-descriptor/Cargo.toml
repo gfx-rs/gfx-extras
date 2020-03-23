@@ -1,0 +1,19 @@
+[package]
+name = "gfx-descriptor"
+version = "0.1.0"
+authors = [
+	"omni-viral <scareaangel@gmail.com>",
+	"The Gfx-rs Developers",
+]
+edition = "2018"
+repository = "https://github.com/gfx-rs/gfx-extras"
+license = "MIT OR Apache-2.0"
+documentation = "https://docs.rs/gfx-descriptor"
+keywords = ["graphics", "gfx-hal"]
+categories = ["rendering"]
+description = "gfx-hal descriptor allocator"
+
+[dependencies]
+fxhash = "0.2"
+hal = { package = "gfx-hal", version = "0.5" }
+log = "0.4"

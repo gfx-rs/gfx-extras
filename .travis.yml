@@ -1,0 +1,13 @@
+language: rust
+rust:
+  - nightly
+  - stable
+os:
+  - windows
+  - linux
+  - osx
+
+script:
+  - cargo check
+  - cargo check --all-features
+  - cargo test

@@ -72,7 +72,6 @@ impl<B: Backend> Block<B> for LinearBlock<B> {
 
 /// Config for `LinearAllocator`.
 #[derive(Clone, Copy, Debug)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct LinearConfig {
     /// Size of the linear chunk.
     /// Keep it big.

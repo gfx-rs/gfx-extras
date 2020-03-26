@@ -86,7 +86,6 @@ impl<B: Backend> Block<B> for GeneralBlock<B> {
 
 /// Config for `GeneralAllocator`.
 #[derive(Clone, Copy, Debug)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct GeneralConfig {
     /// All requests are rounded up to multiple of this value.
     pub block_size_granularity: Size,

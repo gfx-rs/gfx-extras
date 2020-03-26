@@ -116,7 +116,7 @@ impl<B: Backend> LinearAllocator<B> {
     pub fn new(
         memory_type: hal::MemoryTypeId,
         memory_properties: hal::memory::Properties,
-        config: LinearConfig,
+        config: &LinearConfig,
         non_coherent_atom_size: Size,
     ) -> Self {
         log::trace!(

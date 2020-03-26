@@ -1,7 +1,6 @@
 //! Defines usage types for memory bocks.
 //! See `Usage` and implementations for details.
 
-use crate::allocator::Kind;
 use hal::memory as m;
 
 /// Scenarios of how resources use memory.
@@ -60,21 +59,6 @@ impl MemoryUsage {
                 0 | ((properties.contains(m::Properties::CPU_CACHED) == read_back) as u32) << 1
                     | (!properties.contains(m::Properties::DEVICE_LOCAL) as u32) << 0
             }
-        }
-    }
-
-    pub(crate) fn allocator_fitness(&self, kind: Kind) -> u32 {
-        match *self {
-            MemoryUsage::Private | MemoryUsage::Dynamic { .. } => match kind {
-                Kind::Dedicated => 1,
-                Kind::General => 2,
-                Kind::Linear => 0,
-            },
-            MemoryUsage::Staging { .. } => match kind {
-                Kind::Dedicated => 0,
-                Kind::General => 1,
-                Kind::Linear => 2,
-            },
         }
     }
 }

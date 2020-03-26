@@ -164,7 +164,7 @@ impl<B: Backend> GeneralAllocator<B> {
     pub fn new(
         memory_type: hal::MemoryTypeId,
         memory_properties: hal::memory::Properties,
-        config: GeneralConfig,
+        config: &GeneralConfig,
         non_coherent_atom_size: Size,
     ) -> Self {
         log::trace!(

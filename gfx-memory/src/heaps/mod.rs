@@ -1,7 +1,10 @@
 mod heap;
 mod memory_type;
 
-use self::{heap::MemoryHeap, memory_type::MemoryType};
+use self::{
+    heap::MemoryHeap,
+    memory_type::{BlockFlavor, MemoryType},
+};
 use crate::{
     allocator::*, block::Block, mapping::MappedRange, stats::TotalMemoryUtilization,
     usage::MemoryUsage, Size,
@@ -49,17 +52,6 @@ impl From<hal::device::OutOfMemory> for HeapsError {
     }
 }
 
-/// Config for `Heaps` allocator.
-#[derive(Clone, Copy, Debug)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct HeapsConfig {
-    /// Config for linear sub-allocator.
-    pub linear: Option<LinearConfig>,
-
-    /// Config for general sub-allocator.
-    pub general: Option<GeneralConfig>,
-}
-
 /// Heaps available on particular physical device.
 #[derive(Debug)]
 pub struct Heaps<B: hal::Backend> {
@@ -68,31 +60,32 @@ pub struct Heaps<B: hal::Backend> {
 }
 
 impl<B: hal::Backend> Heaps<B> {
-    /// This must be called with `hal::memory::Properties` fetched from physical device.
-    pub unsafe fn new<P, H>(types: P, heaps: H, non_coherent_atom_size: Size) -> Self
-    where
-        P: IntoIterator<Item = (hal::memory::Properties, u32, HeapsConfig)>,
-        H: IntoIterator<Item = Size>,
-    {
-        let heaps = heaps.into_iter().map(MemoryHeap::new).collect::<Vec<_>>();
+    /// Initialize the new `Heaps` object.
+    pub unsafe fn new(
+        hal_memory_properties: &hal::adapter::MemoryProperties,
+        non_coherent_atom_size: Size,
+        config_general: GeneralConfig,
+        config_linear: LinearConfig,
+    ) -> Self {
         Heaps {
-            types: types
-                .into_iter()
+            types: hal_memory_properties.memory_types
+                .iter()
                 .enumerate()
-                .map(|(index, (properties, heap_index, config))| {
-                    let memory_type = hal::MemoryTypeId(index);
-                    let heap_index = heap_index as usize;
-                    assert!(heap_index < heaps.len());
+                .map(|(index, mt)| {
+                    assert!(mt.heap_index < hal_memory_properties.memory_heaps.len());
                     MemoryType::new(
-                        memory_type,
-                        heap_index,
-                        properties,
-                        config,
+                        hal::MemoryTypeId(index),
+                        mt,
+                        &config_general,
+                        &config_linear,
                         non_coherent_atom_size,
                     )
                 })
                 .collect(),
-            heaps,
+            heaps: hal_memory_properties.memory_heaps
+                .iter()
+                .map(|&size| MemoryHeap::new(size))
+                .collect(),
         }
     }
 
@@ -106,6 +99,7 @@ impl<B: hal::Backend> Heaps<B> {
         device: &B::Device,
         mask: u32,
         usage: MemoryUsage,
+        kind: Kind,
         size: Size,
         align: Size,
     ) -> Result<MemoryBlock<B>, HeapsError> {
@@ -140,7 +134,7 @@ impl<B: hal::Backend> Heaps<B> {
                 })?
         };
 
-        self.allocate_from(device, memory_index as u32, usage, size, align)
+        self.allocate_from(device, memory_index as u32, kind, size, align)
     }
 
     /// Allocate memory block
@@ -152,14 +146,14 @@ impl<B: hal::Backend> Heaps<B> {
         &mut self,
         device: &B::Device,
         memory_index: u32,
-        usage: MemoryUsage,
+        kind: Kind,
         size: Size,
         align: Size,
     ) -> Result<MemoryBlock<B>, HeapsError> {
         log::trace!(
-            "Allocate memory block: type '{}', usage '{:#?}', size: '{}', align: '{}'",
+            "Allocate memory block: type '{}', kind  '{:?}', size: '{}', align: '{}'",
             memory_index,
-            usage,
+            kind,
             size,
             align
         );
@@ -171,7 +165,7 @@ impl<B: hal::Backend> Heaps<B> {
             return Err(hal::device::OutOfMemory::Device.into());
         }
 
-        let (flavor, allocated) = memory_type.alloc(device, usage, size, align)?;
+        let (flavor, allocated) = memory_type.alloc(device, kind, size, align)?;
         memory_heap.allocated(allocated, flavor.size());
 
         Ok(MemoryBlock {
@@ -230,23 +224,6 @@ impl<B: hal::Backend> MemoryBlock<B> {
     /// Get memory type id.
     pub fn memory_type(&self) -> u32 {
         self.memory_index
-    }
-}
-
-#[derive(Debug)]
-enum BlockFlavor<B: hal::Backend> {
-    Dedicated(DedicatedBlock<B>),
-    General(GeneralBlock<B>),
-    Linear(LinearBlock<B>),
-}
-
-impl<B: hal::Backend> BlockFlavor<B> {
-    fn size(&self) -> Size {
-        match self {
-            BlockFlavor::Dedicated(block) => block.size(),
-            BlockFlavor::General(block) => block.size(),
-            BlockFlavor::Linear(block) => block.size(),
-        }
     }
 }
 

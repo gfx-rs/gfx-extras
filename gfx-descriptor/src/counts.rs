@@ -172,12 +172,12 @@ impl DescriptorCounts {
         self.counts[descriptor_type_index(&binding.ty)] += binding.count as u32;
     }
 
-    /// Iterate through ranges yelding
-    /// descriptor types and their amount.
+    /// Iterate through counts yelding descriptor types and their amount.
     pub fn iter(&self) -> impl '_ + Iterator<Item = DescriptorRangeDesc> {
         self.counts
         	.iter()
         	.enumerate()
+            .filter(|&(_, count)| *count != 0)
             .map(|(index, count)| DescriptorRangeDesc {
                 count: *count as usize,
                 ty: DESCRIPTOR_TYPES[index],

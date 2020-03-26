@@ -63,9 +63,9 @@ impl<B: hal::Backend> Heaps<B> {
     /// Initialize the new `Heaps` object.
     pub unsafe fn new(
         hal_memory_properties: &hal::adapter::MemoryProperties,
-        non_coherent_atom_size: Size,
         config_general: GeneralConfig,
         config_linear: LinearConfig,
+        non_coherent_atom_size: Size,
     ) -> Self {
         Heaps {
             types: hal_memory_properties.memory_types

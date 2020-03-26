@@ -20,6 +20,16 @@ pub struct Writer<'a, 'b, T, B: Backend> {
     flush: Option<Flush<'b, B>>,
 }
 
+impl<T, B: Backend> Writer<'_, '_, T, B> {
+    /// Dispose of the wrapper and return a bare mapping pointer.
+    ///
+    /// The segment to flush is returned. The user is responsible
+    /// to flush this segment manually.
+    pub fn forget(mut self) -> (*mut T, Option<hal::memory::Segment>) {
+        (self.slice.as_mut_ptr(), self.flush.take().map(|f| f.segment))
+    }
+}
+
 impl<'a, 'b, T, B: Backend> Drop for Writer<'a, 'b, T, B> {
     fn drop(&mut self) {
         if let Some(f) = self.flush.take() {
@@ -109,6 +119,11 @@ impl<'a, B: Backend> MappedRange<'a, B> {
     /// Get mapped range.
     pub fn range(&self) -> Range<Size> {
         self.requested_range.clone()
+    }
+
+    /// Return true if the mapped memory is coherent.
+    pub fn is_coherent(&self) -> bool {
+        self.memory.non_coherent_atom_size.is_none()
     }
 
     /// Fetch readable slice of sub-range to be read.

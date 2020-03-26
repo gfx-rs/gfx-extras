@@ -481,7 +481,6 @@ impl<B: Backend> Allocator<B> for GeneralAllocator<B> {
         size: Size,
         align: Size,
     ) -> Result<(GeneralBlock<B>, Size), hal::device::AllocationError> {
-        debug_assert!(size <= self.max_allocation());
         debug_assert!(align.is_power_of_two());
         let aligned_size = ((size - 1) | (align - 1) | (self.block_size_granularity - 1)) + 1;
         let map_aligned_size = match self.non_coherent_atom_size {

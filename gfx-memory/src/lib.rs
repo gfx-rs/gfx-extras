@@ -20,7 +20,7 @@ mod usage;
 pub use crate::{
     allocator::*,
     block::Block,
-    heaps::{Heaps, HeapsConfig, HeapsError, MemoryBlock},
+    heaps::{Heaps, HeapsError, MemoryBlock},
     mapping::{MappedRange, Writer},
     memory::Memory,
     stats::*,

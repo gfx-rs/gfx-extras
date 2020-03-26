@@ -1,36 +1,67 @@
-use super::{BlockFlavor, HeapsConfig};
-use crate::{allocator::*, stats::*, usage::MemoryUsage, Size};
+use crate::{
+    allocator::*,
+    stats::MemoryTypeUtilization, MemoryUtilization,
+    Size,
+};
 use hal::memory::Properties;
+
+
+#[derive(Debug)]
+pub(super) enum BlockFlavor<B: hal::Backend> {
+    Dedicated(DedicatedBlock<B>),
+    General(GeneralBlock<B>),
+    Linear(LinearBlock<B>),
+}
+
+impl<B: hal::Backend> BlockFlavor<B> {
+    pub(super) fn size(&self) -> Size {
+        match self {
+            BlockFlavor::Dedicated(block) => block.size(),
+            BlockFlavor::General(block) => block.size(),
+            BlockFlavor::Linear(block) => block.size(),
+        }
+    }
+}
 
 #[derive(Debug)]
 pub(super) struct MemoryType<B: hal::Backend> {
     heap_index: usize,
     properties: Properties,
     dedicated: DedicatedAllocator,
-    general: Option<GeneralAllocator<B>>,
-    linear: Option<LinearAllocator<B>>,
+    general: GeneralAllocator<B>,
+    linear: LinearAllocator<B>,
     used: Size,
     effective: Size,
 }
 
 impl<B: hal::Backend> MemoryType<B> {
     pub(super) fn new(
-        memory_type: hal::MemoryTypeId,
-        heap_index: usize,
-        properties: Properties,
-        config: HeapsConfig,
+        type_id: hal::MemoryTypeId,
+        hal_memory_type: &hal::adapter::MemoryType,
+        general_config: &GeneralConfig,
+        linear_config: &LinearConfig,
         non_coherent_atom_size: Size,
     ) -> Self {
         MemoryType {
-            properties,
-            heap_index,
-            dedicated: DedicatedAllocator::new(memory_type, properties, non_coherent_atom_size),
-            linear: config.linear.map(|config| {
-                LinearAllocator::new(memory_type, properties, config, non_coherent_atom_size)
-            }),
-            general: config.general.map(|config| {
-                GeneralAllocator::new(memory_type, properties, config, non_coherent_atom_size)
-            }),
+            heap_index: hal_memory_type.heap_index,
+            properties: hal_memory_type.properties,
+            dedicated: DedicatedAllocator::new(
+                type_id,
+                hal_memory_type.properties,
+                non_coherent_atom_size,
+            ),
+            general: GeneralAllocator::new(
+                type_id,
+                hal_memory_type.properties,
+                general_config,
+                non_coherent_atom_size,
+            ),
+            linear: LinearAllocator::new(
+                type_id,
+                hal_memory_type.properties,
+                linear_config,
+                non_coherent_atom_size,
+            ),
             used: 0,
             effective: 0,
         }
@@ -47,89 +78,44 @@ impl<B: hal::Backend> MemoryType<B> {
     pub(super) fn alloc(
         &mut self,
         device: &B::Device,
-        usage: MemoryUsage,
+        kind: Kind,
         size: Size,
         align: Size,
     ) -> Result<(BlockFlavor<B>, Size), hal::device::AllocationError> {
-        let (block, allocated) = self.alloc_impl(device, usage, size, align)?;
+        let (block, allocated) = match kind {
+            Kind::Dedicated => {
+                self.dedicated
+                    .alloc(device, size, align)
+                    .map(|(block, size)| (BlockFlavor::Dedicated(block), size))
+            }
+            Kind::General => {
+                self.general
+                    .alloc(device, size, align)
+                    .map(|(block, size)| (BlockFlavor::General(block), size))
+            }
+            Kind::Linear => {
+                self.linear
+                    .alloc(device, size, align)
+                    .map(|(block, size)| (BlockFlavor::Linear(block), size))
+            }
+        }?;
         self.effective += block.size();
         self.used += allocated;
         Ok((block, allocated))
     }
 
-    fn alloc_impl(
-        &mut self,
-        device: &B::Device,
-        usage: MemoryUsage,
-        size: Size,
-        align: Size,
-    ) -> Result<(BlockFlavor<B>, Size), hal::device::AllocationError> {
-        match (self.general.as_mut(), self.linear.as_mut()) {
-            (Some(general), Some(linear)) => {
-                if general.max_allocation() >= size
-                    && usage.allocator_fitness(Kind::General)
-                        > usage.allocator_fitness(Kind::Linear)
-                {
-                    general
-                        .alloc(device, size, align)
-                        .map(|(block, size)| (BlockFlavor::General(block), size))
-                } else if linear.max_allocation() >= size
-                    && usage.allocator_fitness(Kind::Linear) > 0
-                {
-                    linear
-                        .alloc(device, size, align)
-                        .map(|(block, size)| (BlockFlavor::Linear(block), size))
-                } else {
-                    self.dedicated
-                        .alloc(device, size, align)
-                        .map(|(block, size)| (BlockFlavor::Dedicated(block), size))
-                }
-            }
-            (Some(general), None) => {
-                if general.max_allocation() >= size && usage.allocator_fitness(Kind::General) > 0 {
-                    general
-                        .alloc(device, size, align)
-                        .map(|(block, size)| (BlockFlavor::General(block), size))
-                } else {
-                    self.dedicated
-                        .alloc(device, size, align)
-                        .map(|(block, size)| (BlockFlavor::Dedicated(block), size))
-                }
-            }
-            (None, Some(linear)) => {
-                if linear.max_allocation() >= size && usage.allocator_fitness(Kind::Linear) > 0 {
-                    linear
-                        .alloc(device, size, align)
-                        .map(|(block, size)| (BlockFlavor::Linear(block), size))
-                } else {
-                    self.dedicated
-                        .alloc(device, size, align)
-                        .map(|(block, size)| (BlockFlavor::Dedicated(block), size))
-                }
-            }
-            (None, None) => self
-                .dedicated
-                .alloc(device, size, align)
-                .map(|(block, size)| (BlockFlavor::Dedicated(block), size)),
-        }
-    }
-
     pub(super) fn free(&mut self, device: &B::Device, block: BlockFlavor<B>) -> Size {
         match block {
             BlockFlavor::Dedicated(block) => self.dedicated.free(device, block),
-            BlockFlavor::General(block) => self.general.as_mut().unwrap().free(device, block),
-            BlockFlavor::Linear(block) => self.linear.as_mut().unwrap().free(device, block),
+            BlockFlavor::General(block) => self.general.free(device, block),
+            BlockFlavor::Linear(block) => self.linear.free(device, block),
         }
     }
 
     pub(super) fn clear(&mut self, device: &B::Device) {
         log::trace!("Dispose memory allocators");
-        if let Some(mut linear) = self.linear.take() {
-            linear.clear(device);
-        }
-        if let Some(mut general) = self.general.take() {
-            general.clear(device);
-        }
+        self.general.clear(device);
+        self.linear.clear(device);
     }
 
     pub(super) fn utilization(&self) -> MemoryTypeUtilization {

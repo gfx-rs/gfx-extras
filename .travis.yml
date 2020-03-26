@@ -1,13 +1,31 @@
 language: rust
-rust:
-  - nightly
-  - stable
-os:
-  - windows
-  - linux
-  - osx
+
+matrix:
+  include:
+    # Linux 64bit
+    - os: linux
+      rust: stable
+      env:
+        - BUILD_COMMAND=clippy
+    - os: linux
+      rust: nightly
+      env:
+        - BUILD_COMMAND=check
+    # Windows 64bit
+    - os: windows
+      rust: stable
+      env:
+        - BUILD_COMMAND=clippy
+    # macOS 64bit
+    - os: osx
+      rust: stable
+      env:
+        - BUILD_COMMAND=clippy
+
+before_script:
+  - if [[ $BUILD_COMMAND == "clippy" ]]; then rustup component add clippy; fi
 
 script:
-  - cargo check
-  - cargo check --all-features
+  - cargo $BUILD_COMMAND
+  - if [[ $TRAVIS_RUST_VERSION == "nightly" ]]; then cargo check --all-features; fi
   - cargo test

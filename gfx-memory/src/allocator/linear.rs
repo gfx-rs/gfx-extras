@@ -167,7 +167,7 @@ impl<B: Backend> LinearAllocator<B> {
                     device.free_memory(mem.into_raw());
                 },
                 Err(_) => {
-                    log::error!("Allocated `Line` was freed, but memory is still shared and never will be destroyed");
+                    log::error!("Allocated `Line` was freed, but memory is still shared and never will be destroyed.");
                 }
             }
         }
@@ -213,8 +213,8 @@ impl<B: Backend> Allocator<B> for LinearAllocator<B> {
             let aligned_offset =
                 crate::align_offset(line.used, unsafe { AtomSize::new_unchecked(align) });
             if aligned_offset + size <= self.linear_size {
-                line.used = aligned_offset + size;
                 line.free += aligned_offset - line.used;
+                line.used = aligned_offset + size;
 
                 let block = LinearBlock {
                     linear_index: self.offset + count - 1,
@@ -260,6 +260,7 @@ impl<B: Backend> Allocator<B> for LinearAllocator<B> {
     fn free(&mut self, device: &B::Device, block: Self::Block) -> Size {
         let index = (block.linear_index - self.offset) as usize;
         self.lines[index].free += block.size();
+        drop(block);
         self.cleanup(device, 1)
     }
 }

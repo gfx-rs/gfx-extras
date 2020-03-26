@@ -24,10 +24,8 @@ pub struct DescriptorSet<B: Backend> {
     counts: DescriptorCounts,
 }
 
-impl<B: Backend> std::ops::Deref for DescriptorSet<B> {
-    type Target = B::DescriptorSet;
-
-    fn deref(&self) -> &B::DescriptorSet {
+impl<B: Backend> DescriptorSet<B> {
+    pub fn raw(&self) -> &B::DescriptorSet {
         &self.raw
     }
 }
@@ -246,9 +244,9 @@ impl<B: Backend> DescriptorAllocator<B> {
         }
     }
 
-    /// Destroy allocator instance.
+    /// Clear the allocator instance.
     /// All sets allocated from this allocator become invalid.
-    pub unsafe fn dispose(mut self, device: &B::Device) {
+    pub unsafe fn clear(&mut self, device: &B::Device) {
         for (_, bucket) in self.buckets.drain() {
             bucket.dispose(device);
         }
@@ -264,7 +262,7 @@ impl<B: Backend> DescriptorAllocator<B> {
         &mut self,
         device: &B::Device,
         layout: &B::DescriptorSetLayout,
-        layout_counts: DescriptorCounts,
+        layout_counts: &DescriptorCounts,
         count: u32,
         extend: &mut impl Extend<DescriptorSet<B>>,
     ) -> Result<(), OutOfMemory> {
@@ -283,7 +281,7 @@ impl<B: Backend> DescriptorAllocator<B> {
             .buckets
             .entry(layout_counts.clone())
             .or_insert_with(DescriptorBucket::new);
-        match bucket.allocate(device, layout, &layout_counts, count, &mut self.allocation) {
+        match bucket.allocate(device, layout, layout_counts, count, &mut self.allocation) {
             Ok(()) => {
                 extend.extend(
                     self.allocation.pools

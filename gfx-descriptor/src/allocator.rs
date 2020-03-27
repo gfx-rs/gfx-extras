@@ -29,6 +29,14 @@ impl<B: Backend> DescriptorSet<B> {
     pub fn raw(&self) -> &B::DescriptorSet {
         &self.raw
     }
+
+    /// Get a mutable reference to gfx-hal descriptor set.
+    ///
+    /// # Safety
+    /// Object needs not to be replaced.
+    pub unsafe fn raw_mut(&mut self) -> &mut B::DescriptorSet {
+        &mut self.raw
+    }
 }
 
 #[derive(Debug)]

@@ -25,6 +25,7 @@ pub struct DescriptorSet<B: Backend> {
 }
 
 impl<B: Backend> DescriptorSet<B> {
+    /// Get a reference to gfx-hal descriptor set.
     pub fn raw(&self) -> &B::DescriptorSet {
         &self.raw
     }

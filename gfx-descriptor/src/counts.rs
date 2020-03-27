@@ -209,7 +209,7 @@ impl FromIterator<DescriptorSetLayoutBinding> for DescriptorCounts {
 }
 
 impl PartialOrd for DescriptorCounts {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         let mut ord = self.counts[0].partial_cmp(&other.counts[0])?;
         for i in 1..DESCRIPTOR_TYPES_COUNT {
             match (ord, self.counts[i].partial_cmp(&other.counts[i])?) {

@@ -204,8 +204,10 @@ impl<B: Backend> Allocator<B> for LinearAllocator<B> {
             None => (size, align),
         };
 
-        assert!(size <= self.linear_size);
-        assert!(align <= self.linear_size);
+        if size > self.linear_size || align > self.linear_size {
+            //TODO: better error here?
+            return Err(hal::device::AllocationError::TooManyObjects);
+        }
 
         let count = self.lines.len() as Size;
         if let Some(line) = self.lines.back_mut() {

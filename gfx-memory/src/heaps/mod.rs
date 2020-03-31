@@ -165,7 +165,14 @@ impl<B: hal::Backend> Heaps<B> {
             return Err(hal::device::OutOfMemory::Device.into());
         }
 
-        let (flavor, allocated) = memory_type.alloc(device, kind, size, align)?;
+        let (flavor, allocated) = match memory_type.alloc(device, kind, size, align) {
+            Ok(mapping) => mapping,
+            Err(e) if kind == Kind::Linear => {
+                log::warn!("Unable to allocate {:?} with {:?}: {:?}", size, kind, e);
+                memory_type.alloc(device, Kind::Dedicated, size, align)?
+            }
+            Err(e) => return Err(e.into()),
+        };
         memory_heap.allocated(allocated, flavor.size());
 
         Ok(MemoryBlock {

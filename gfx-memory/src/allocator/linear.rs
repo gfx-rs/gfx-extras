@@ -159,6 +159,7 @@ impl<B: Backend> LinearAllocator<B> {
 
             match Arc::try_unwrap(line.memory) {
                 Ok(mem) => unsafe {
+                    log::trace!("Freed 'Line' of size of {}", mem.size());
                     if mem.is_mappable() {
                         device.unmap_memory(mem.raw());
                     }
@@ -230,6 +231,7 @@ impl<B: Backend> Allocator<B> for LinearAllocator<B> {
             }
         }
 
+        log::trace!("Allocated 'Line' of size of {}", self.linear_size);
         let (memory, ptr) = unsafe {
             super::allocate_memory_helper(
                 device,

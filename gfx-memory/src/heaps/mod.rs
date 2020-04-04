@@ -185,9 +185,13 @@ impl<B: hal::Backend> Heaps<B> {
     ///
     /// Memory block must be allocated from this heap.
     pub fn free(&mut self, device: &B::Device, block: MemoryBlock<B>) {
-        // trace!("Free block '{:#?}'", block);
         let memory_index = block.memory_index;
         let size = block.flavor.size();
+        log::trace!(
+            "Free memory block: type '{}', size: '{}'",
+            memory_index,
+            size,
+        );
 
         let ref mut memory_type = self.types[memory_index as usize];
         let ref mut memory_heap = self.heaps[memory_type.heap_index()];

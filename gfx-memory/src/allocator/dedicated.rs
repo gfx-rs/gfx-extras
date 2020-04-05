@@ -134,6 +134,7 @@ impl<B: Backend> Allocator<B> for DedicatedAllocator {
             Some(atom) => crate::align_size(size, atom),
             None => size,
         };
+        log::trace!("Allocate block of size: {}", size);
 
         let (memory, ptr) = unsafe {
             super::allocate_memory_helper(
@@ -151,9 +152,9 @@ impl<B: Backend> Allocator<B> for DedicatedAllocator {
 
     fn free(&mut self, device: &B::Device, block: DedicatedBlock<B>) -> Size {
         let size = block.memory.size();
+        log::trace!("Free block of size: {}", size);
         self.used -= size;
         unsafe {
-            // trace!("Unmap memory: {:#?}", self.memory);
             device.unmap_memory(block.memory.raw());
             device.free_memory(block.memory.into_raw());
         }

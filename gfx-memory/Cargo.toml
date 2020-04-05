@@ -1,6 +1,6 @@
 [package]
 name = "gfx-memory"
-version = "0.1.1"
+version = "0.1.2"
 authors = [
 	"omni-viral <scareaangel@gmail.com>",
 	"The Gfx-rs Developers",

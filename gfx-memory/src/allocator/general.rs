@@ -362,6 +362,7 @@ impl<B: Backend> GeneralAllocator<B> {
 
         let total_blocks = size_entry.total_blocks;
         let (chunk, allocated) = self.alloc_chunk(device, block_size, total_blocks)?;
+        log::trace!("\tChunk init mask: 0x{:x}", chunk.blocks);
         let size_entry = self.sizes.entry(block_size).or_default();
         let chunk_index = size_entry.chunks.insert(chunk) as u32;
 
@@ -409,9 +410,7 @@ impl<B: Backend> GeneralAllocator<B> {
                     align,
                 );
             }
-        }
-
-        if size_entry.total_blocks == MIN_BLOCKS_PER_CHUNK as Size {
+        } else {
             self.chunks.insert(block_size);
         }
 
@@ -530,7 +529,9 @@ enum ChunkFlavor<B: Backend> {
 #[derive(Debug)]
 struct Chunk<B: Backend> {
     flavor: ChunkFlavor<B>,
-    blocks: Size,
+    /// A bit mask of block availability. Each bit in 0 .. MAX_BLOCKS_PER_CHUNK
+    /// corresponds to a block, which is free if the bit is 1.
+    blocks: u64,
 }
 
 impl<B: Backend> Chunk<B> {
@@ -586,7 +587,7 @@ impl<B: Backend> Chunk<B> {
     /// Check if there are free blocks.
     fn is_unused(&self, block_size: Size) -> bool {
         let range = self.range();
-        let blocks = (range.end - range.start / block_size).min(MAX_BLOCKS_PER_CHUNK as Size);
+        let blocks = ((range.end - range.start) / block_size).min(MAX_BLOCKS_PER_CHUNK as Size);
 
         let high_bit = 1 << (blocks - 1);
         let mask = (high_bit - 1) | high_bit;
@@ -604,18 +605,20 @@ impl<B: Backend> Chunk<B> {
         debug_assert!(count > 0 && count <= MAX_BLOCKS_PER_CHUNK);
 
         // Holds a bit-array of all positions with `count` free blocks.
-        let mut blocks = !0;
+        let mut blocks = !0u64;
         for i in 0..count {
             blocks &= self.blocks >> i;
         }
         // Find a position in `blocks` that is aligned.
         while blocks != 0 {
             let index = blocks.trailing_zeros();
-            blocks &= !(1 << index);
+            blocks ^= 1 << index;
 
             if (index as Size * block_size) & (align - 1) == 0 {
                 let mask = ((1 << count) - 1) << index;
-                self.blocks &= !mask;
+                debug_assert_eq!(self.blocks & mask, mask);
+                self.blocks ^= mask;
+                log::trace!("Chunk acquire mask: 0x{:x} -> 0x{:x}", mask, self.blocks);
                 return Some(index);
             }
         }
@@ -623,9 +626,11 @@ impl<B: Backend> Chunk<B> {
     }
 
     fn release_blocks(&mut self, index: u32, count: u32) {
+        debug_assert!(index + count <= MAX_BLOCKS_PER_CHUNK);
         let mask = ((1 << count) - 1) << index;
         debug_assert_eq!(self.blocks & mask, 0);
         self.blocks |= mask;
+        log::trace!("Chunk release mask: 0x{:x} -> 0x{:x}", mask, self.blocks);
     }
 
     fn mapping_ptr(&self) -> Option<NonNull<u8>> {

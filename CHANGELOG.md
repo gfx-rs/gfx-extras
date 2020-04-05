@@ -1,5 +1,8 @@
 # Change Log
 
+## memory-0.1.2 (05-04-2020)
+  - fix freeing from General allocator
+
 ## memory-0.1.1 (31-03-2020)
   - fall back from linear to dedicated kind
 

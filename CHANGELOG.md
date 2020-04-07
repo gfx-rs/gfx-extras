@@ -1,5 +1,8 @@
 # Change Log
 
+## memory-0.1.3 (07-04-2020)
+  - fix chunk refcounting in General allocator for dedicated blocks
+
 ## memory-0.1.2 (05-04-2020)
   - fix freeing from General allocator
 

@@ -457,6 +457,7 @@ impl<B: Backend> GeneralAllocator<B> {
         if chunk.is_unused(block_size) {
             size_entry.ready_chunks.remove(chunk_index);
             let chunk = size_entry.chunks.remove(chunk_index as usize);
+            drop(block); // it keeps an Arc reference to the chunk
             self.free_chunk(device, chunk, block_size)
         } else {
             size_entry.ready_chunks.add(chunk_index);

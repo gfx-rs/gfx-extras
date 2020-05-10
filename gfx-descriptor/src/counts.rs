@@ -80,7 +80,7 @@ const DESCRIPTOR_TYPES: [DescriptorType; DESCRIPTOR_TYPES_COUNT] = [
 
 fn descriptor_type_index(ty: &DescriptorType) -> usize {
     match ty {
-         DescriptorType::Sampler => 0,
+        DescriptorType::Sampler => 0,
         DescriptorType::Image {
             ty: ImageDescriptorType::Sampled { with_sampler: true },
         } => 1,
@@ -97,15 +97,17 @@ fn descriptor_type_index(ty: &DescriptorType) -> usize {
         } => 4,
         DescriptorType::Buffer {
             ty: BufferDescriptorType::Storage { read_only: true },
-            format: BufferDescriptorFormat::Structured {
-                dynamic_offset: true,
-            },
+            format:
+                BufferDescriptorFormat::Structured {
+                    dynamic_offset: true,
+                },
         } => 5,
         DescriptorType::Buffer {
             ty: BufferDescriptorType::Storage { read_only: true },
-            format: BufferDescriptorFormat::Structured {
-                dynamic_offset: false,
-            },
+            format:
+                BufferDescriptorFormat::Structured {
+                    dynamic_offset: false,
+                },
         } => 6,
         DescriptorType::Buffer {
             ty: BufferDescriptorType::Storage { read_only: true },
@@ -113,15 +115,17 @@ fn descriptor_type_index(ty: &DescriptorType) -> usize {
         } => 7,
         DescriptorType::Buffer {
             ty: BufferDescriptorType::Storage { read_only: false },
-            format: BufferDescriptorFormat::Structured {
-                dynamic_offset: true,
-            },
+            format:
+                BufferDescriptorFormat::Structured {
+                    dynamic_offset: true,
+                },
         } => 8,
         DescriptorType::Buffer {
             ty: BufferDescriptorType::Storage { read_only: false },
-            format: BufferDescriptorFormat::Structured {
-                dynamic_offset: false,
-            },
+            format:
+                BufferDescriptorFormat::Structured {
+                    dynamic_offset: false,
+                },
         } => 9,
         DescriptorType::Buffer {
             ty: BufferDescriptorType::Storage { read_only: false },
@@ -129,15 +133,17 @@ fn descriptor_type_index(ty: &DescriptorType) -> usize {
         } => 10,
         DescriptorType::Buffer {
             ty: BufferDescriptorType::Uniform,
-            format: BufferDescriptorFormat::Structured {
-                dynamic_offset: true,
-            },
+            format:
+                BufferDescriptorFormat::Structured {
+                    dynamic_offset: true,
+                },
         } => 11,
         DescriptorType::Buffer {
             ty: BufferDescriptorType::Uniform,
-            format: BufferDescriptorFormat::Structured {
-                dynamic_offset: false,
-            },
+            format:
+                BufferDescriptorFormat::Structured {
+                    dynamic_offset: false,
+                },
         } => 12,
         DescriptorType::Buffer {
             ty: BufferDescriptorType::Uniform,
@@ -161,7 +167,7 @@ pub struct DescriptorCounts {
 }
 
 impl DescriptorCounts {
-	/// Empty descriptor counts.
+    /// Empty descriptor counts.
     pub const EMPTY: Self = DescriptorCounts {
         counts: [0; DESCRIPTOR_TYPES_COUNT],
     };
@@ -175,8 +181,8 @@ impl DescriptorCounts {
     /// Iterate through counts yelding descriptor types and their amount.
     pub fn iter(&self) -> impl '_ + Iterator<Item = DescriptorRangeDesc> {
         self.counts
-        	.iter()
-        	.enumerate()
+            .iter()
+            .enumerate()
             .filter(|&(_, count)| *count != 0)
             .map(|(index, count)| DescriptorRangeDesc {
                 count: *count as usize,
@@ -195,9 +201,10 @@ impl DescriptorCounts {
 }
 
 impl FromIterator<DescriptorSetLayoutBinding> for DescriptorCounts {
-	fn from_iter<T>(iter: T) -> Self where
-		T: IntoIterator<Item = DescriptorSetLayoutBinding>
-	{
+    fn from_iter<T>(iter: T) -> Self
+    where
+        T: IntoIterator<Item = DescriptorSetLayoutBinding>,
+    {
         let mut descs = Self::EMPTY;
 
         for binding in iter {
@@ -205,7 +212,7 @@ impl FromIterator<DescriptorSetLayoutBinding> for DescriptorCounts {
         }
 
         descs
-	}
+    }
 }
 
 impl PartialOrd for DescriptorCounts {

@@ -53,7 +53,10 @@ impl<B: Backend> Allocation<B> {
         count: u32,
     ) -> Result<(), OutOfMemory> {
         let sets_were = self.sets.len();
-        match pool.allocate(std::iter::repeat(layout).take(count as usize), &mut self.sets) {
+        match pool.allocate(
+            std::iter::repeat(layout).take(count as usize),
+            &mut self.sets,
+        ) {
             Err(err) => {
                 pool.free_sets(self.sets.drain(sets_were..));
                 Err(match err {
@@ -196,7 +199,11 @@ impl<B: Backend> DescriptorBucket<B> {
         Ok(())
     }
 
-    unsafe fn free(&mut self, sets: impl IntoIterator<Item = B::DescriptorSet>, pool_id: PoolIndex) {
+    unsafe fn free(
+        &mut self,
+        sets: impl IntoIterator<Item = B::DescriptorSet>,
+        pool_id: PoolIndex,
+    ) {
         let pool = &mut self.pools[(pool_id - self.pools_offset) as usize];
         let mut count = 0;
         pool.raw.free_sets(sets.into_iter().map(|set| {
@@ -293,7 +300,8 @@ impl<B: Backend> DescriptorAllocator<B> {
         match bucket.allocate(device, layout, layout_counts, count, &mut self.allocation) {
             Ok(()) => {
                 extend.extend(
-                    self.allocation.pools
+                    self.allocation
+                        .pools
                         .drain(..)
                         .zip(self.allocation.sets.drain(..))
                         .map(|(pool_id, set)| DescriptorSet {

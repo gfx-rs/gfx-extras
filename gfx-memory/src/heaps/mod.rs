@@ -73,7 +73,8 @@ impl<B: hal::Backend> Heaps<B> {
         non_coherent_atom_size: Size,
     ) -> Self {
         Heaps {
-            types: hal_memory_properties.memory_types
+            types: hal_memory_properties
+                .memory_types
                 .iter()
                 .enumerate()
                 .map(|(index, mt)| {
@@ -87,7 +88,8 @@ impl<B: hal::Backend> Heaps<B> {
                     )
                 })
                 .collect(),
-            heaps: hal_memory_properties.memory_heaps
+            heaps: hal_memory_properties
+                .memory_heaps
                 .iter()
                 .map(|&size| MemoryHeap::new(size))
                 .collect(),
@@ -126,7 +128,10 @@ impl<B: hal::Backend> Heaps<B> {
             }
 
             suitable_types
-                .filter(|(_, mt, _)| self.heaps[mt.heap_index()].available() > requirements.size + requirements.alignment)
+                .filter(|(_, mt, _)| {
+                    self.heaps[mt.heap_index()].available()
+                        > requirements.size + requirements.alignment
+                })
                 .max_by_key(|&(_, _, fitness)| fitness)
                 .ok_or_else(|| {
                     log::error!("All suitable heaps are exhausted. {:#?}", self);
@@ -134,7 +139,13 @@ impl<B: hal::Backend> Heaps<B> {
                 })?
         };
 
-        self.allocate_from(device, memory_index as u32, kind, requirements.size, requirements.alignment)
+        self.allocate_from(
+            device,
+            memory_index as u32,
+            kind,
+            requirements.size,
+            requirements.alignment,
+        )
     }
 
     /// Allocate memory block

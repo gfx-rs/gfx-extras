@@ -105,7 +105,7 @@ impl<B: hal::Backend> MemoryType<B> {
     }
 
     pub(super) fn clear(&mut self, device: &B::Device) {
-        log::trace!("Dispose memory allocators");
+        log::trace!("Clear memory allocators.");
         self.general.clear(device);
         self.linear.clear(device);
     }

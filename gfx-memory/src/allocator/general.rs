@@ -466,7 +466,9 @@ impl<B: Backend> GeneralAllocator<B> {
     }
 
     /// Free the contents of the allocator.
-    pub fn clear(&mut self, _device: &B::Device) {}
+    pub fn clear(&mut self, _device: &B::Device) -> Size {
+        0
+    }
 }
 
 impl<B: Backend> Allocator<B> for GeneralAllocator<B> {

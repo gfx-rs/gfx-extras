@@ -12,7 +12,7 @@ use std::{collections::VecDeque, ops::Range, ptr::NonNull, sync::Arc};
 #[derive(Debug)]
 pub struct LinearBlock<B: Backend> {
     memory: Arc<Memory<B>>,
-    linear_index: Size,
+    line_index: Size,
     ptr: Option<NonNull<u8>>,
     range: Range<Size>,
 }
@@ -70,37 +70,40 @@ impl<B: Backend> Block<B> for LinearBlock<B> {
     }
 }
 
-/// Config for `LinearAllocator`.
+/// Config for [`LinearAllocator`].
+/// Refer to documentation on [`LinearAllocator`] to better understand what the configuration options mean.
 #[derive(Clone, Copy, Debug)]
 pub struct LinearConfig {
-    /// Size of the linear chunk.
-    /// Keep it big.
-    pub linear_size: Size,
+    /// Size in bytes of each `Line`.
+    /// If you try to create an allocation larger then this your allocation will fall back to the general allocator.
+    pub line_size: Size,
 }
 
-/// Linear allocator that return memory from chunk sequentially.
-/// It keeps only number of bytes allocated from each chunk.
-/// Once chunk is exhausted it is placed into list.
-/// When all blocks allocated from head of that list are freed,
-/// head is freed as well.
+/// The `LinearAllocator` is best suited for short-lived allocations.
+/// The allocation strategy has minimal overhead and the implementation is fast.
+/// But holding a single block will completely stop memory recycling.
 ///
-/// This allocator suites best short-lived types of allocations.
-/// Allocation strategy requires minimal overhead and implementation is fast.
-/// But holding single block will completely stop memory recycling.
+/// The linear allocator will internally create multiple lines.
+/// Each line is a `gfx_hal::Backend::Memory` from which multiple [`LinearBlock`]s are linearly allocated.
+///
+/// A new line is created if there is insufficient space to create a [`LinearBlock`] from the current line.
 #[derive(Debug)]
 pub struct LinearAllocator<B: Backend> {
     memory_type: hal::MemoryTypeId,
     memory_properties: hal::memory::Properties,
-    linear_size: Size,
-    offset: Size,
+    line_size: Size,
+    finished_lines_count: Size,
     lines: VecDeque<Line<B>>,
     non_coherent_atom_size: Option<AtomSize>,
 }
 
+/// If freed >= allocated it is safe to free the line.
 #[derive(Debug)]
 struct Line<B: Backend> {
-    used: Size,
-    free: Size,
+    /// Points to the last allocated byte in the line. Only ever increases.
+    allocated: Size,
+    /// Points to the last freed byte in the line. Only ever increases.
+    freed: Size,
     memory: Arc<Memory<B>>,
     ptr: Option<NonNull<u8>>,
 }
@@ -111,7 +114,7 @@ unsafe impl<B: Backend> Sync for Line<B> {}
 impl<B: Backend> LinearAllocator<B> {
     /// Create new `LinearAllocator`
     /// for `memory_type` with `memory_properties` specified,
-    /// with `LinearConfig` provided.
+    /// with `config`.
     pub fn new(
         memory_type: hal::MemoryTypeId,
         memory_properties: hal::memory::Properties,
@@ -124,19 +127,19 @@ impl<B: Backend> LinearAllocator<B> {
             memory_properties,
             config
         );
-        let (linear_size, non_coherent_atom_size) =
+        let (line_size, non_coherent_atom_size) =
             if crate::is_non_coherent_visible(memory_properties) {
                 let atom = AtomSize::new(non_coherent_atom_size);
-                (crate::align_size(config.linear_size, atom.unwrap()), atom)
+                (crate::align_size(config.line_size, atom.unwrap()), atom)
             } else {
-                (config.linear_size, None)
+                (config.line_size, None)
             };
 
         LinearAllocator {
             memory_type,
             memory_properties,
-            linear_size,
-            offset: 0,
+            line_size,
+            finished_lines_count: 0,
             lines: VecDeque::new(),
             non_coherent_atom_size,
         }
@@ -144,18 +147,18 @@ impl<B: Backend> LinearAllocator<B> {
 
     /// Maximum allocation size.
     pub fn max_allocation(&self) -> Size {
-        self.linear_size / 2
+        self.line_size / 2
     }
 
     fn cleanup(&mut self, device: &B::Device, off: usize) -> Size {
         let mut freed = 0;
         while self.lines.len() > off {
-            if self.lines[0].used > self.lines[0].free {
+            if self.lines[0].allocated > self.lines[0].freed {
                 break;
             }
 
             let line = self.lines.pop_front().unwrap();
-            self.offset += 1;
+            self.finished_lines_count += 1;
 
             match Arc::try_unwrap(line.memory) {
                 Ok(mem) => unsafe {
@@ -174,7 +177,7 @@ impl<B: Backend> LinearAllocator<B> {
         freed
     }
 
-    /// Perform full cleanup of the memory allocated.
+    /// Perform full cleanup of the allocated memory.
     pub fn clear(&mut self, device: &B::Device) {
         let _ = self.cleanup(device, 0);
         if !self.lines.is_empty() {
@@ -205,22 +208,22 @@ impl<B: Backend> Allocator<B> for LinearAllocator<B> {
             None => (size, align),
         };
 
-        if size > self.linear_size || align > self.linear_size {
+        if size > self.line_size || align > self.line_size {
             //TODO: better error here?
             return Err(hal::device::AllocationError::TooManyObjects);
         }
 
-        let count = self.lines.len() as Size;
+        let lines_count = self.lines.len() as Size;
         if let Some(line) = self.lines.back_mut() {
             let aligned_offset =
-                crate::align_offset(line.used, unsafe { AtomSize::new_unchecked(align) });
-            if aligned_offset + size <= self.linear_size {
-                line.free += aligned_offset - line.used;
-                line.used = aligned_offset + size;
+                crate::align_offset(line.allocated, unsafe { AtomSize::new_unchecked(align) });
+            if aligned_offset + size <= self.line_size {
+                line.freed += aligned_offset - line.allocated;
+                line.allocated = aligned_offset + size;
 
                 let block = LinearBlock {
-                    linear_index: self.offset + count - 1,
-                    memory: Arc::clone(&line.memory),
+                    line_index: self.finished_lines_count + lines_count - 1,
+                    memory: line.memory.clone(),
                     ptr: line.ptr.map(|ptr| unsafe {
                         NonNull::new_unchecked(ptr.as_ptr().offset(aligned_offset as isize))
                     }),
@@ -231,38 +234,38 @@ impl<B: Backend> Allocator<B> for LinearAllocator<B> {
             }
         }
 
-        log::trace!("Allocated 'Line' of size of {}", self.linear_size);
+        log::trace!("Allocated 'Line' of size of {}", self.line_size);
         let (memory, ptr) = unsafe {
             super::allocate_memory_helper(
                 device,
                 self.memory_type,
-                self.linear_size,
+                self.line_size,
                 self.memory_properties,
                 self.non_coherent_atom_size,
             )?
         };
 
         let line = Line {
-            used: size,
-            free: 0,
+            allocated: size,
+            freed: 0,
             ptr,
             memory: Arc::new(memory),
         };
 
         let block = LinearBlock {
-            linear_index: self.offset + count,
+            line_index: self.finished_lines_count + lines_count,
             memory: Arc::clone(&line.memory),
             ptr,
             range: 0..size,
         };
 
         self.lines.push_back(line);
-        Ok((block, self.linear_size))
+        Ok((block, self.line_size))
     }
 
     fn free(&mut self, device: &B::Device, block: Self::Block) -> Size {
-        let index = (block.linear_index - self.offset) as usize;
-        self.lines[index].free += block.size();
+        let index = (block.line_index - self.finished_lines_count) as usize;
+        self.lines[index].freed += block.size();
         drop(block);
         self.cleanup(device, 1)
     }
@@ -271,7 +274,7 @@ impl<B: Backend> Allocator<B> for LinearAllocator<B> {
 impl<B: Backend> Drop for LinearAllocator<B> {
     fn drop(&mut self) {
         if !self.lines.is_empty() {
-            log::error!("Not all allocation from LinearAllocator was freed");
+            log::error!("Not all allocations from LinearAllocator were freed");
         }
     }
 }

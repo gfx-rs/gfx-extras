@@ -210,11 +210,17 @@ impl<B: hal::Backend> Heaps<B> {
         memory_heap.freed(freed, size);
     }
 
-    /// Clear allocators before dropping.
-    /// Will panic if memory instances are left allocated.
+    /// Clear allocators.
+    /// Call this before dropping an instance of [`Heaps`]
+    /// or if you are low on memory.
+    ///
+    /// Internally calls the clear methods on all
+    /// internal [`LinearAllocator`] and [`GeneralAllocator`] instances.
     pub fn clear(&mut self, device: &B::Device) {
-        for mut mt in self.types.drain(..) {
-            mt.clear(device)
+        for memory_type in self.types.iter_mut() {
+            let ref mut memory_heap = self.heaps[memory_type.heap_index()];
+            let freed = memory_type.clear(device);
+            memory_heap.freed(freed, 0);
         }
     }
 
@@ -229,8 +235,14 @@ impl<B: hal::Backend> Heaps<B> {
 
 impl<B: hal::Backend> Drop for Heaps<B> {
     fn drop(&mut self) {
-        if !self.types.is_empty() {
-            log::error!("Heaps still have {:?} types live on drop", self.types.len());
+        for memory_heap in &self.heaps {
+            let utilization = memory_heap.utilization();
+            if utilization.utilization.used != 0 || utilization.utilization.effective != 0 {
+                log::error!(
+                    "Heaps not completely freed before drop. Utilization: {:?}",
+                    utilization
+                );
+            }
         }
     }
 }

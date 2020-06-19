@@ -87,6 +87,9 @@ pub struct LinearConfig {
 /// Each line is a `gfx_hal::Backend::Memory` from which multiple [`LinearBlock`]s are linearly allocated.
 ///
 /// A new line is created if there is insufficient space to create a [`LinearBlock`] from the current line.
+/// New lines are created from scratch or taken from a pool of previously used lines.
+/// When lines have no allocated [`LinearBlock`]s remaining they are moved to a pool to be reused.
+/// This pool of unused lines is freed only when [`LinearAllocator::clear`] is called.
 #[derive(Debug)]
 pub struct LinearAllocator<B: Backend> {
     memory_type: hal::MemoryTypeId,
@@ -95,6 +98,8 @@ pub struct LinearAllocator<B: Backend> {
     finished_lines_count: Size,
     lines: VecDeque<Line<B>>,
     non_coherent_atom_size: Option<AtomSize>,
+    /// Previously used lines that have been replaced, kept around to use next time a new line is needed.
+    unused_lines: Vec<Line<B>>,
 }
 
 /// If freed >= allocated it is safe to free the line.
@@ -106,6 +111,27 @@ struct Line<B: Backend> {
     freed: Size,
     memory: Arc<Memory<B>>,
     ptr: Option<NonNull<u8>>,
+}
+
+impl<B: Backend> Line<B> {
+    unsafe fn free_memory(self, device: &B::Device) -> Size {
+        match Arc::try_unwrap(self.memory) {
+            Ok(memory) => {
+                log::trace!("Freed `Line` of size {}", memory.size());
+                if memory.is_mappable() {
+                    device.unmap_memory(memory.raw());
+                }
+
+                let freed = memory.size();
+                device.free_memory(memory.into_raw());
+                freed
+            }
+            Err(_) => {
+                log::error!("Allocated `Line` was freed, but memory is still shared.");
+                0
+            }
+        }
+    }
 }
 
 unsafe impl<B: Backend> Send for Line<B> {}
@@ -141,6 +167,7 @@ impl<B: Backend> LinearAllocator<B> {
             line_size,
             finished_lines_count: 0,
             lines: VecDeque::new(),
+            unused_lines: Vec::new(),
             non_coherent_atom_size,
         }
     }
@@ -150,9 +177,9 @@ impl<B: Backend> LinearAllocator<B> {
         self.line_size / 2
     }
 
-    fn cleanup(&mut self, device: &B::Device, off: usize) -> Size {
+    fn cleanup(&mut self, device: &B::Device, free_memory: bool) -> Size {
         let mut freed = 0;
-        while self.lines.len() > off {
+        while !self.lines.is_empty() {
             if self.lines[0].allocated > self.lines[0].freed {
                 break;
             }
@@ -160,17 +187,15 @@ impl<B: Backend> LinearAllocator<B> {
             let line = self.lines.pop_front().unwrap();
             self.finished_lines_count += 1;
 
-            match Arc::try_unwrap(line.memory) {
-                Ok(mem) => unsafe {
-                    log::trace!("Freed 'Line' of size of {}", mem.size());
-                    if mem.is_mappable() {
-                        device.unmap_memory(mem.raw());
-                    }
-                    freed += mem.size();
-                    device.free_memory(mem.into_raw());
-                },
-                Err(_) => {
-                    log::error!("Allocated `Line` was freed, but memory is still shared and never will be destroyed.");
+            if free_memory {
+                unsafe {
+                    freed += line.free_memory(device);
+                }
+            } else {
+                if Arc::strong_count(&line.memory) == 1 {
+                    self.unused_lines.push(line);
+                } else {
+                    log::error!("Allocated `Line` was freed, but memory is still shared.");
                 }
             }
         }
@@ -178,14 +203,17 @@ impl<B: Backend> LinearAllocator<B> {
     }
 
     /// Perform full cleanup of the allocated memory.
-    pub fn clear(&mut self, device: &B::Device) {
-        let _ = self.cleanup(device, 0);
-        if !self.lines.is_empty() {
-            log::error!(
-                "Lines are not empty during allocator disposal. Lines: {:#?}",
-                self.lines
-            );
+    pub fn clear(&mut self, device: &B::Device) -> Size {
+        let mut freed = self.cleanup(device, true);
+
+        for line in self.unused_lines.drain(..) {
+            freed += self.line_size;
+            unsafe {
+                line.free_memory(device);
+            }
         }
+
+        freed
     }
 }
 
@@ -223,7 +251,7 @@ impl<B: Backend> Allocator<B> for LinearAllocator<B> {
 
                 let block = LinearBlock {
                     line_index: self.finished_lines_count + lines_count - 1,
-                    memory: line.memory.clone(),
+                    memory: Arc::clone(&line.memory),
                     ptr: line.ptr.map(|ptr| unsafe {
                         NonNull::new_unchecked(ptr.as_ptr().offset(aligned_offset as isize))
                     }),
@@ -234,40 +262,49 @@ impl<B: Backend> Allocator<B> for LinearAllocator<B> {
             }
         }
 
-        log::trace!("Allocated 'Line' of size of {}", self.line_size);
-        let (memory, ptr) = unsafe {
-            super::allocate_memory_helper(
-                device,
-                self.memory_type,
-                self.line_size,
-                self.memory_properties,
-                self.non_coherent_atom_size,
-            )?
-        };
+        let (mut line, new_allocation_size) = if let Some(line) = self.unused_lines.pop() {
+            (line, 0)
+        } else {
+            log::trace!("Allocated `Line` of size {}", self.line_size);
+            let (memory, ptr) = unsafe {
+                super::allocate_memory_helper(
+                    device,
+                    self.memory_type,
+                    self.line_size,
+                    self.memory_properties,
+                    self.non_coherent_atom_size,
+                )?
+            };
 
-        let line = Line {
-            allocated: size,
-            freed: 0,
-            ptr,
-            memory: Arc::new(memory),
+            (
+                Line {
+                    allocated: size,
+                    freed: 0,
+                    ptr,
+                    memory: Arc::new(memory),
+                },
+                self.line_size,
+            )
         };
+        line.allocated = size;
+        line.freed = 0;
 
         let block = LinearBlock {
             line_index: self.finished_lines_count + lines_count,
             memory: Arc::clone(&line.memory),
-            ptr,
+            ptr: line.ptr,
             range: 0..size,
         };
 
         self.lines.push_back(line);
-        Ok((block, self.line_size))
+        Ok((block, new_allocation_size))
     }
 
     fn free(&mut self, device: &B::Device, block: Self::Block) -> Size {
         let index = (block.line_index - self.finished_lines_count) as usize;
         self.lines[index].freed += block.size();
         drop(block);
-        self.cleanup(device, 1)
+        self.cleanup(device, false)
     }
 }
 

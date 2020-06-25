@@ -66,6 +66,9 @@ pub struct Heaps<B: hal::Backend> {
 
 impl<B: hal::Backend> Heaps<B> {
     /// Initialize the new `Heaps` object.
+    ///
+    /// # Safety
+    /// All later operations assume the device is not lost.
     pub unsafe fn new(
         hal_memory_properties: &hal::adapter::MemoryProperties,
         config_general: GeneralConfig,
@@ -82,8 +85,8 @@ impl<B: hal::Backend> Heaps<B> {
                     MemoryType::new(
                         hal::MemoryTypeId(index),
                         mt,
-                        &config_general,
-                        &config_linear,
+                        config_general,
+                        config_linear,
                         non_coherent_atom_size,
                     )
                 })
@@ -169,8 +172,8 @@ impl<B: hal::Backend> Heaps<B> {
             align
         );
 
-        let ref mut memory_type = self.types[memory_index as usize];
-        let ref mut memory_heap = self.heaps[memory_type.heap_index()];
+        let memory_type = &mut self.types[memory_index as usize];
+        let memory_heap = &mut self.heaps[memory_type.heap_index()];
 
         if memory_heap.available() < size {
             return Err(hal::device::OutOfMemory::Device.into());
@@ -204,8 +207,8 @@ impl<B: hal::Backend> Heaps<B> {
             size,
         );
 
-        let ref mut memory_type = self.types[memory_index as usize];
-        let ref mut memory_heap = self.heaps[memory_type.heap_index()];
+        let memory_type = &mut self.types[memory_index as usize];
+        let memory_heap = &mut self.heaps[memory_type.heap_index()];
         let freed = memory_type.free(device, block.flavor);
         memory_heap.freed(freed, size);
     }
@@ -218,7 +221,7 @@ impl<B: hal::Backend> Heaps<B> {
     /// internal [`LinearAllocator`] and [`GeneralAllocator`] instances.
     pub fn clear(&mut self, device: &B::Device) {
         for memory_type in self.types.iter_mut() {
-            let ref mut memory_heap = self.heaps[memory_type.heap_index()];
+            let memory_heap = &mut self.heaps[memory_type.heap_index()];
             let freed = memory_type.clear(device);
             memory_heap.freed(freed, 0);
         }

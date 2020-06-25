@@ -18,11 +18,10 @@ use std::{
 
 //TODO: const fn
 fn max_chunks_per_size() -> usize {
-    let value = (std::mem::size_of::<usize>() * 8).pow(4);
-    value
+    (std::mem::size_of::<usize>() * 8).pow(4)
 }
 
-/// Memory block allocated from `GeneralAllocator`
+/// Memory block allocated from `GeneralAllocator`.
 #[derive(Debug)]
 pub struct GeneralBlock<B: Backend> {
     block_index: u32,
@@ -163,7 +162,7 @@ impl<B: Backend> GeneralAllocator<B> {
     pub fn new(
         memory_type: hal::MemoryTypeId,
         memory_properties: hal::memory::Properties,
-        config: &GeneralConfig,
+        config: GeneralConfig,
         non_coherent_atom_size: Size,
     ) -> Self {
         log::trace!(
@@ -246,6 +245,8 @@ impl<B: Backend> GeneralAllocator<B> {
     }
 
     /// Allocate memory chunk for given block size.
+    ///
+    /// The chunk will be aligned to the `block_size`.
     fn alloc_chunk(
         &mut self,
         device: &B::Device,
@@ -308,26 +309,27 @@ impl<B: Backend> GeneralAllocator<B> {
             chunk_index
         );
 
-        let ref mut chunk = chunks[chunk_index as usize];
+        let chunk = &mut chunks[chunk_index as usize];
         let block_index = chunk.acquire_blocks(count, block_size, align)?;
         let block_range = chunk.blocks_range(block_size, block_index, count);
 
-        debug_assert_eq!((block_range.end - block_range.start) % count as Size, 0);
+        let block_start = block_range.start;
+        debug_assert_eq!((block_range.end - block_start) % count as Size, 0);
 
         Some(GeneralBlock {
-            range: block_range.clone(),
+            range: block_range,
             memory: Arc::clone(chunk.shared_memory()),
             block_index,
             chunk_index,
             count,
             ptr: chunk.mapping_ptr().map(|ptr| unsafe {
-                let offset = (block_range.start - chunk.range().start) as isize;
+                let offset = (block_start - chunk.range().start) as isize;
                 NonNull::new_unchecked(ptr.as_ptr().offset(offset))
             }),
         })
     }
 
-    /// Allocate blocks from size entry.
+    /// Allocate `count` blocks from size entry.
     fn alloc_from_entry(
         &mut self,
         device: &B::Device,
@@ -449,7 +451,7 @@ impl<B: Backend> GeneralAllocator<B> {
             .get_mut(&block_size)
             .expect("Unable to get size entry from which block was allocated");
         let chunk_index = block.chunk_index;
-        let ref mut chunk = size_entry.chunks[chunk_index as usize];
+        let chunk = &mut size_entry.chunks[chunk_index as usize];
         let block_index = block.block_index;
         let count = block.count;
 
@@ -621,7 +623,7 @@ impl<B: Backend> Chunk<B> {
                 let mask = ((1 << count) - 1) << index;
                 debug_assert_eq!(self.blocks & mask, mask);
                 self.blocks ^= mask;
-                log::trace!("Chunk acquire mask: 0x{:x} -> 0x{:x}", mask, self.blocks);
+                log::trace!("Chunk acquired at {}, mask: 0x{:x} -> 0x{:x}", index, mask, self.blocks);
                 return Some(index);
             }
         }
@@ -633,7 +635,7 @@ impl<B: Backend> Chunk<B> {
         let mask = ((1 << count) - 1) << index;
         debug_assert_eq!(self.blocks & mask, 0);
         self.blocks |= mask;
-        log::trace!("Chunk release mask: 0x{:x} -> 0x{:x}", mask, self.blocks);
+        log::trace!("Chunk released at {}, mask: 0x{:x} -> 0x{:x}", index, mask, self.blocks);
     }
 
     fn mapping_ptr(&self) -> Option<NonNull<u8>> {

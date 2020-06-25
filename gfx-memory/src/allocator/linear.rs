@@ -144,7 +144,7 @@ impl<B: Backend> LinearAllocator<B> {
     pub fn new(
         memory_type: hal::MemoryTypeId,
         memory_properties: hal::memory::Properties,
-        config: &LinearConfig,
+        config: LinearConfig,
         non_coherent_atom_size: Size,
     ) -> Self {
         log::trace!(
@@ -191,12 +191,10 @@ impl<B: Backend> LinearAllocator<B> {
                 unsafe {
                     freed += line.free_memory(device);
                 }
+            } else if Arc::strong_count(&line.memory) == 1 {
+                self.unused_lines.push(line);
             } else {
-                if Arc::strong_count(&line.memory) == 1 {
-                    self.unused_lines.push(line);
-                } else {
-                    log::error!("Allocated `Line` was freed, but memory is still shared.");
-                }
+                log::error!("Allocated `Line` was freed, but memory is still shared.");
             }
         }
         freed

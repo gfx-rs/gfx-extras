@@ -78,7 +78,7 @@ const DESCRIPTOR_TYPES: [DescriptorType; DESCRIPTOR_TYPES_COUNT] = [
     DescriptorType::InputAttachment,
 ];
 
-fn descriptor_type_index(ty: &DescriptorType) -> usize {
+fn descriptor_type_index(ty: DescriptorType) -> usize {
     match ty {
         DescriptorType::Sampler => 0,
         DescriptorType::Image {
@@ -155,7 +155,7 @@ fn descriptor_type_index(ty: &DescriptorType) -> usize {
 
 #[test]
 fn test_descriptor_types() {
-    for (index, ty) in DESCRIPTOR_TYPES.iter().enumerate() {
+    for (index, &ty) in DESCRIPTOR_TYPES.iter().enumerate() {
         assert_eq!(index, descriptor_type_index(ty));
     }
 }
@@ -175,7 +175,7 @@ impl DescriptorCounts {
     /// Add a single layout binding.
     /// Useful when created with `DescriptorCounts::EMPTY`.
     pub fn add_binding(&mut self, binding: DescriptorSetLayoutBinding) {
-        self.counts[descriptor_type_index(&binding.ty)] += binding.count as u32;
+        self.counts[descriptor_type_index(binding.ty)] += binding.count as u32;
     }
 
     /// Iterate through counts yelding descriptor types and their amount.
@@ -208,7 +208,7 @@ impl FromIterator<DescriptorSetLayoutBinding> for DescriptorCounts {
         let mut descs = Self::EMPTY;
 
         for binding in iter {
-            descs.counts[descriptor_type_index(&binding.ty)] += binding.count as u32;
+            descs.counts[descriptor_type_index(binding.ty)] += binding.count as u32;
         }
 
         descs

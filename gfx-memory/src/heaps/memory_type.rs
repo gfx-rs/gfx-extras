@@ -33,8 +33,8 @@ impl<B: hal::Backend> MemoryType<B> {
     pub(super) fn new(
         type_id: hal::MemoryTypeId,
         hal_memory_type: &hal::adapter::MemoryType,
-        general_config: &GeneralConfig,
-        linear_config: &LinearConfig,
+        general_config: GeneralConfig,
+        linear_config: LinearConfig,
         non_coherent_atom_size: Size,
     ) -> Self {
         MemoryType {

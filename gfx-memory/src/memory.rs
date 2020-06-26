@@ -1,4 +1,4 @@
-use crate::{AtomSize, Size};
+use crate::Size;
 
 /// Memory object wrapper.
 /// Contains size and properties of the memory.
@@ -7,7 +7,7 @@ pub struct Memory<B: hal::Backend> {
     raw: B::Memory,
     size: Size,
     properties: hal::memory::Properties,
-    pub(crate) non_coherent_atom_size: Option<AtomSize>,
+    pub(crate) non_coherent_atom_size: Option<Size>,
 }
 
 impl<B: hal::Backend> Memory<B> {
@@ -40,7 +40,7 @@ impl<B: hal::Backend> Memory<B> {
         raw: B::Memory,
         size: Size,
         properties: hal::memory::Properties,
-        non_coherent_atom_size: Option<AtomSize>,
+        non_coherent_atom_size: Option<Size>,
     ) -> Self {
         debug_assert_eq!(
             non_coherent_atom_size.is_some(),

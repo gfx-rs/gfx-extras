@@ -1,4 +1,4 @@
-use crate::{allocator::*, stats::MemoryTypeUtilization, MemoryUtilization, Size};
+use crate::{allocator::*, stats::MemoryTypeUtilization, MemoryUtilization, RawSize, Size};
 use hal::memory::Properties;
 
 #[derive(Debug)]
@@ -25,8 +25,8 @@ pub(super) struct MemoryType<B: hal::Backend> {
     dedicated: DedicatedAllocator,
     general: GeneralAllocator<B>,
     linear: LinearAllocator<B>,
-    used: Size,
-    effective: Size,
+    used: RawSize,
+    effective: RawSize,
 }
 
 impl<B: hal::Backend> MemoryType<B> {
@@ -76,7 +76,7 @@ impl<B: hal::Backend> MemoryType<B> {
         kind: Kind,
         size: Size,
         align: Size,
-    ) -> Result<(BlockFlavor<B>, Size), hal::device::AllocationError> {
+    ) -> Result<(BlockFlavor<B>, RawSize), hal::device::AllocationError> {
         let (block, allocated) = match kind {
             Kind::Dedicated => self
                 .dedicated
@@ -91,12 +91,12 @@ impl<B: hal::Backend> MemoryType<B> {
                 .alloc(device, size, align)
                 .map(|(block, size)| (BlockFlavor::Linear(block), size)),
         }?;
-        self.effective += block.size();
+        self.effective += block.size().get();
         self.used += allocated;
         Ok((block, allocated))
     }
 
-    pub(super) fn free(&mut self, device: &B::Device, block: BlockFlavor<B>) -> Size {
+    pub(super) fn free(&mut self, device: &B::Device, block: BlockFlavor<B>) -> RawSize {
         match block {
             BlockFlavor::Dedicated(block) => self.dedicated.free(device, block),
             BlockFlavor::General(block) => self.general.free(device, block),
@@ -104,7 +104,7 @@ impl<B: hal::Backend> MemoryType<B> {
         }
     }
 
-    pub(super) fn clear(&mut self, device: &B::Device) -> Size {
+    pub(super) fn clear(&mut self, device: &B::Device) -> RawSize {
         log::trace!("Clear memory allocators.");
         self.general.clear(device) + self.linear.clear(device)
     }

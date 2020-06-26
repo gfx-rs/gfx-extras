@@ -3,7 +3,7 @@ use crate::{
     block::Block,
     mapping::MappedRange,
     memory::Memory,
-    AtomSize, Size,
+    RawSize, Size,
 };
 use hal::{device::Device as _, Backend};
 use hibitset::{BitSet, BitSetLike as _};
@@ -30,7 +30,7 @@ pub struct GeneralBlock<B: Backend> {
     count: u32,
     memory: Arc<Memory<B>>,
     ptr: Option<NonNull<u8>>,
-    range: Range<Size>,
+    range: Range<RawSize>,
 }
 
 unsafe impl<B: Backend> Send for GeneralBlock<B> {}
@@ -39,7 +39,7 @@ unsafe impl<B: Backend> Sync for GeneralBlock<B> {}
 impl<B: Backend> GeneralBlock<B> {
     /// Get the size of this block.
     pub fn size(&self) -> Size {
-        self.range.end - self.range.start
+        Size::new(self.range.end - self.range.start).unwrap()
     }
 }
 
@@ -122,9 +122,9 @@ pub struct GeneralAllocator<B: Backend> {
     sizes: HashMap<Size, SizeEntry<B>, BuildHasherDefault<fxhash::FxHasher>>,
 
     /// Ordered set of sizes that have allocated chunks.
-    chunks: BTreeSet<Size>,
+    chunks: BTreeSet<RawSize>,
 
-    non_coherent_atom_size: Option<AtomSize>,
+    non_coherent_atom_size: Option<Size>,
 }
 
 //TODO: ensure Send and Sync
@@ -134,7 +134,7 @@ unsafe impl<B: Backend> Sync for GeneralAllocator<B> {}
 #[derive(Debug)]
 struct SizeEntry<B: Backend> {
     /// Total count of allocated blocks with size corresponding to this entry.
-    total_blocks: Size,
+    total_blocks: usize,
 
     /// Bits per ready (non-exhausted) chunks with free blocks.
     ready_chunks: BitSet,
@@ -182,16 +182,16 @@ impl<B: Backend> GeneralAllocator<B> {
         );
 
         assert!(
-            config.block_size_granularity.is_power_of_two(),
+            config.block_size_granularity.get().is_power_of_two(),
             "Allocation granularity must be power of two"
         );
         assert!(
-            config.max_chunk_size.is_power_of_two(),
+            config.max_chunk_size.get().is_power_of_two(),
             "Max chunk size must be power of two"
         );
 
         assert!(
-            config.min_device_allocation.is_power_of_two(),
+            config.min_device_allocation.get().is_power_of_two(),
             "Min device allocation must be power of two"
         );
 
@@ -204,8 +204,12 @@ impl<B: Backend> GeneralAllocator<B> {
             if crate::is_non_coherent_visible(memory_properties) {
                 let granularity = non_coherent_atom_size
                     .max(config.block_size_granularity)
+                    .get()
                     .next_power_of_two();
-                (granularity, AtomSize::new(non_coherent_atom_size))
+                (
+                    Size::new(granularity).unwrap(),
+                    Some(non_coherent_atom_size),
+                )
             } else {
                 (config.block_size_granularity, None)
             };
@@ -223,8 +227,8 @@ impl<B: Backend> GeneralAllocator<B> {
     }
 
     /// Maximum block size to allocate within a chunk that is another block.
-    pub fn max_sub_block_size(&self) -> Size {
-        self.max_chunk_size / MIN_BLOCKS_PER_CHUNK as Size
+    fn max_sub_block_size(&self) -> RawSize {
+        self.max_chunk_size.get() / MIN_BLOCKS_PER_CHUNK as RawSize
     }
 
     /// Allocate memory chunk from device.
@@ -244,7 +248,7 @@ impl<B: Backend> GeneralAllocator<B> {
             super::allocate_memory_helper(
                 device,
                 self.memory_type,
-                block_size * count as Size,
+                Size::new(block_size.get() * count as RawSize).unwrap(),
                 self.memory_properties,
                 self.non_coherent_atom_size,
             )?
@@ -261,20 +265,20 @@ impl<B: Backend> GeneralAllocator<B> {
         device: &B::Device,
         block_size: Size,
         requested_count: u32,
-    ) -> Result<(Chunk<B>, Size), hal::device::AllocationError> {
+    ) -> Result<(Chunk<B>, RawSize), hal::device::AllocationError> {
         log::trace!(
             "Allocate chunk for roughly {} blocks of size {}",
             requested_count,
             block_size
         );
 
-        let min_chunk_size = MIN_BLOCKS_PER_CHUNK as Size * block_size;
-        let max_chunk_size = MAX_BLOCKS_PER_CHUNK as Size * block_size;
+        let min_chunk_size = MIN_BLOCKS_PER_CHUNK as RawSize * block_size.get();
+        let max_chunk_size = MAX_BLOCKS_PER_CHUNK as RawSize * block_size.get();
         let clamped_count = requested_count
             .next_power_of_two() // makes it more re-usable
             .max(MIN_BLOCKS_PER_CHUNK)
             .min(MAX_BLOCKS_PER_CHUNK);
-        let requested_chunk_size = clamped_count as Size * block_size;
+        let requested_chunk_size = clamped_count as RawSize * block_size.get();
 
         // If smallest possible chunk size is larger then this allocator max allocation
         if min_chunk_size > self.max_sub_block_size() {
@@ -286,15 +290,17 @@ impl<B: Backend> GeneralAllocator<B> {
         let (block, allocated) = match self
             .chunks
             .range(min_chunk_size..=max_chunk_size)
-            .rfind(|&size| size % block_size == 0)
+            .rfind(|&size| size % block_size.get() == 0)
         {
             Some(&chunk_size) => {
                 // Allocate block for the chunk.
-                self.alloc_from_entry(device, chunk_size, 1, block_size)?
+                let allocation_size = unsafe { Size::new_unchecked(chunk_size) };
+                self.alloc_from_entry(device, allocation_size, 1, block_size)?
             }
             None => {
                 // Allocate a new block for the chunk.
-                self.alloc_block(device, requested_chunk_size, block_size)?
+                let allocation_size = unsafe { Size::new_unchecked(requested_chunk_size) };
+                self.alloc_block(device, allocation_size, block_size)?
             }
         };
 
@@ -321,7 +327,7 @@ impl<B: Backend> GeneralAllocator<B> {
         let block_range = chunk.blocks_range(block_size, block_index, count);
 
         let block_start = block_range.start;
-        debug_assert_eq!((block_range.end - block_start) % count as Size, 0);
+        debug_assert_eq!((block_range.end - block_start) % count as RawSize, 0);
 
         Some(GeneralBlock {
             range: block_range,
@@ -345,7 +351,7 @@ impl<B: Backend> GeneralAllocator<B> {
         block_size: Size,
         count: u32,
         align: Size,
-    ) -> Result<(GeneralBlock<B>, Size), hal::device::AllocationError> {
+    ) -> Result<(GeneralBlock<B>, RawSize), hal::device::AllocationError> {
         log::trace!(
             "Allocate {} consecutive blocks for size {} from the entry",
             count,
@@ -354,7 +360,7 @@ impl<B: Backend> GeneralAllocator<B> {
 
         debug_assert!(count < MIN_BLOCKS_PER_CHUNK);
         debug_assert_eq!(
-            block_size % align,
+            block_size.get() % align.get(),
             0,
             "Requested entry block size {} is not aligned to {}",
             block_size,
@@ -408,18 +414,18 @@ impl<B: Backend> GeneralAllocator<B> {
         device: &B::Device,
         block_size: Size,
         align: Size,
-    ) -> Result<(GeneralBlock<B>, Size), hal::device::AllocationError> {
+    ) -> Result<(GeneralBlock<B>, RawSize), hal::device::AllocationError> {
         log::trace!("Allocate block of size {}", block_size);
 
         debug_assert_eq!(
-            block_size & (self.block_size_granularity - 1),
+            block_size.get() & (self.block_size_granularity.get() - 1),
             0,
             "Requested block size {} is not aligned to the size granularity {}",
             block_size,
             self.block_size_granularity
         );
         debug_assert_eq!(
-            block_size % align,
+            block_size.get() % align.get(),
             0,
             "Requested block size {} is not aligned to {}",
             block_size,
@@ -428,31 +434,31 @@ impl<B: Backend> GeneralAllocator<B> {
         let size_entry = self.sizes.entry(block_size).or_default();
         size_entry.total_blocks += 1;
 
-        let overhead = (MIN_BLOCKS_PER_CHUNK as Size - 1) / size_entry.total_blocks;
+        let overhead = (MIN_BLOCKS_PER_CHUNK as RawSize - 1) / size_entry.total_blocks as RawSize;
 
         if overhead >= 1 {
             // this is chosen is such a way that the required `count`
             // is less than `MIN_BLOCKS_PER_CHUNK`.
-            let divisor = MIN_BLOCKS_PER_CHUNK as Size >> 1;
+            let divisor = MIN_BLOCKS_PER_CHUNK as RawSize >> 1;
             if let Some(&size) = self
                 .chunks
-                .range((block_size / divisor)..block_size * overhead)
-                .find(|&size| size % align == 0)
+                .range((block_size.get() / divisor)..block_size.get() * overhead)
+                .find(|&size| size % align.get() == 0)
             {
                 return self.alloc_from_entry(
                     device,
-                    size,
-                    ((block_size - 1) / size + 1) as u32,
+                    Size::new(size).unwrap(),
+                    ((block_size.get() - 1) / size + 1) as u32,
                     align,
                 );
             }
         }
 
-        self.chunks.insert(block_size);
+        self.chunks.insert(block_size.get());
         self.alloc_from_entry(device, block_size, 1, align)
     }
 
-    fn free_chunk(&mut self, device: &B::Device, chunk: Chunk<B>, block_size: Size) -> Size {
+    fn free_chunk(&mut self, device: &B::Device, chunk: Chunk<B>, block_size: Size) -> RawSize {
         log::trace!("Free chunk: {:#?}", chunk);
         assert!(chunk.is_unused(block_size));
         match chunk.flavor {
@@ -469,16 +475,16 @@ impl<B: Backend> GeneralAllocator<B> {
                         log::error!("Allocated `Chunk` was freed, but memory is still shared and never will be destroyed");
                     }
                 }
-                size
+                size.get()
             }
             ChunkFlavor::General(block) => self.free(device, block),
         }
     }
 
-    fn free_block(&mut self, device: &B::Device, block: GeneralBlock<B>) -> Size {
+    fn free_block(&mut self, device: &B::Device, block: GeneralBlock<B>) -> RawSize {
         log::trace!("Free block: {:#?}", block);
 
-        let block_size = block.size() / block.count as Size;
+        let block_size = Size::new(block.size().get() / block.count as RawSize).unwrap();
         let size_entry = self
             .sizes
             .get_mut(&block_size)
@@ -501,7 +507,7 @@ impl<B: Backend> GeneralAllocator<B> {
     }
 
     /// Free the contents of the allocator.
-    pub fn clear(&mut self, _device: &B::Device) -> Size {
+    pub fn clear(&mut self, _device: &B::Device) -> RawSize {
         0
     }
 }
@@ -516,9 +522,11 @@ impl<B: Backend> Allocator<B> for GeneralAllocator<B> {
         device: &B::Device,
         size: Size,
         align: Size,
-    ) -> Result<(GeneralBlock<B>, Size), hal::device::AllocationError> {
-        debug_assert!(align.is_power_of_two());
-        let aligned_size = ((size - 1) | (align - 1) | (self.block_size_granularity - 1)) + 1;
+    ) -> Result<(GeneralBlock<B>, RawSize), hal::device::AllocationError> {
+        debug_assert!(align.get().is_power_of_two());
+        let aligned_size_raw =
+            ((size.get() - 1) | (align.get() - 1) | (self.block_size_granularity.get() - 1)) + 1;
+        let aligned_size = unsafe { Size::new_unchecked(aligned_size_raw) };
         let map_aligned_size = match self.non_coherent_atom_size {
             Some(atom) => crate::align_size(aligned_size, atom),
             None => aligned_size,
@@ -535,7 +543,7 @@ impl<B: Backend> Allocator<B> for GeneralAllocator<B> {
         self.alloc_block(device, map_aligned_size, align)
     }
 
-    fn free(&mut self, device: &B::Device, block: GeneralBlock<B>) -> Size {
+    fn free(&mut self, device: &B::Device, block: GeneralBlock<B>) -> RawSize {
         self.free_block(device, block)
     }
 }
@@ -573,8 +581,8 @@ struct Chunk<B: Backend> {
 
 impl<B: Backend> Chunk<B> {
     fn from_memory(block_size: Size, memory: Memory<B>, ptr: Option<NonNull<u8>>) -> Self {
-        let blocks = memory.size() / block_size;
-        debug_assert!(blocks <= MAX_BLOCKS_PER_CHUNK as Size);
+        let blocks = memory.size().get() / block_size.get();
+        debug_assert!(blocks <= MAX_BLOCKS_PER_CHUNK as RawSize);
 
         let high_bit = 1 << (blocks - 1);
 
@@ -588,7 +596,8 @@ impl<B: Backend> Chunk<B> {
     }
 
     fn from_block(block_size: Size, chunk_block: GeneralBlock<B>) -> Self {
-        let blocks = (chunk_block.size() / block_size).min(MAX_BLOCKS_PER_CHUNK as Size);
+        let blocks =
+            (chunk_block.size().get() / block_size.get()).min(MAX_BLOCKS_PER_CHUNK as RawSize);
 
         let high_bit = 1 << (blocks - 1);
 
@@ -605,18 +614,18 @@ impl<B: Backend> Chunk<B> {
         }
     }
 
-    fn range(&self) -> Range<Size> {
+    fn range(&self) -> Range<RawSize> {
         match self.flavor {
-            ChunkFlavor::Dedicated { ref memory, .. } => 0..memory.size(),
+            ChunkFlavor::Dedicated { ref memory, .. } => 0..memory.size().get(),
             ChunkFlavor::General(ref block) => block.range.clone(),
         }
     }
 
     // Get block bytes range
-    fn blocks_range(&self, block_size: Size, block_index: u32, count: u32) -> Range<Size> {
+    fn blocks_range(&self, block_size: Size, block_index: u32, count: u32) -> Range<RawSize> {
         let range = self.range();
-        let start = range.start + block_size * block_index as Size;
-        let end = start + block_size * count as Size;
+        let start = range.start + block_size.get() * block_index as RawSize;
+        let end = start + block_size.get() * count as RawSize;
         debug_assert!(end <= range.end);
         start..end
     }
@@ -624,7 +633,8 @@ impl<B: Backend> Chunk<B> {
     /// Check if there are free blocks.
     fn is_unused(&self, block_size: Size) -> bool {
         let range = self.range();
-        let blocks = ((range.end - range.start) / block_size).min(MAX_BLOCKS_PER_CHUNK as Size);
+        let blocks =
+            ((range.end - range.start) / block_size.get()).min(MAX_BLOCKS_PER_CHUNK as RawSize);
 
         let high_bit = 1 << (blocks - 1);
         let mask = (high_bit - 1) | high_bit;
@@ -651,7 +661,7 @@ impl<B: Backend> Chunk<B> {
             let index = blocks.trailing_zeros();
             blocks ^= 1 << index;
 
-            if (index as Size * block_size) & (align - 1) == 0 {
+            if (index as RawSize * block_size.get()) & (align.get() - 1) == 0 {
                 let mask = ((1 << count) - 1) << index;
                 debug_assert_eq!(self.blocks & mask, mask);
                 self.blocks ^= mask;

@@ -31,26 +31,27 @@ pub use crate::{
 use std::ops::Range;
 
 /// Type for any memory sizes.
-pub type Size = u64;
-/// Type for non-coherent atom sizes.
-pub type AtomSize = std::num::NonZeroU64;
+/// Used in ranges, stats, and internally.
+pub type RawSize = u64;
+/// Type for non-zero memory size.
+pub type Size = std::num::NonZeroU64;
 
 fn is_non_coherent_visible(properties: hal::memory::Properties) -> bool {
     properties.contains(hal::memory::Properties::CPU_VISIBLE)
         && !properties.contains(hal::memory::Properties::COHERENT)
 }
 
-fn align_range(range: &Range<Size>, align: AtomSize) -> Range<Size> {
+fn align_range(range: &Range<RawSize>, align: Size) -> Range<RawSize> {
     let start = range.start - range.start % align.get();
     let end = ((range.end - 1) / align.get() + 1) * align.get();
     start..end
 }
 
-fn align_size(size: Size, align: AtomSize) -> Size {
-    ((size - 1) / align.get() + 1) * align.get()
+fn align_size(size: Size, align: Size) -> Size {
+    Size::new(((size.get() - 1) / align.get() + 1) * align.get()).unwrap()
 }
 
-fn align_offset(value: Size, align: AtomSize) -> Size {
+fn align_offset(value: RawSize, align: Size) -> RawSize {
     debug_assert_eq!(align.get().count_ones(), 1);
     if value == 0 {
         0
@@ -61,8 +62,8 @@ fn align_offset(value: Size, align: AtomSize) -> Size {
 
 fn segment_to_sub_range(
     segment: hal::memory::Segment,
-    whole: &Range<Size>,
-) -> Result<Range<Size>, hal::device::MapError> {
+    whole: &Range<RawSize>,
+) -> Result<Range<RawSize>, hal::device::MapError> {
     let start = whole.start + segment.offset;
     match segment.size {
         Some(s) if start + s <= whole.end => Ok(start..start + s),
@@ -71,6 +72,6 @@ fn segment_to_sub_range(
     }
 }
 
-fn is_sub_range(sub: &Range<Size>, range: &Range<Size>) -> bool {
+fn is_sub_range(sub: &Range<RawSize>, range: &Range<RawSize>) -> bool {
     sub.start >= range.start && sub.end <= range.end
 }

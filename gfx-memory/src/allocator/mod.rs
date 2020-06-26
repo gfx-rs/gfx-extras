@@ -9,7 +9,7 @@ pub use self::{
     general::{GeneralAllocator, GeneralBlock, GeneralConfig},
     linear::{LinearAllocator, LinearBlock, LinearConfig},
 };
-use crate::{block::Block, memory::Memory, AtomSize, Size};
+use crate::{block::Block, memory::Memory, RawSize, Size};
 use std::ptr::NonNull;
 
 /// Allocator kind.
@@ -42,11 +42,11 @@ pub trait Allocator<B: hal::Backend> {
         device: &B::Device,
         size: Size,
         align: Size,
-    ) -> Result<(Self::Block, Size), hal::device::AllocationError>;
+    ) -> Result<(Self::Block, RawSize), hal::device::AllocationError>;
 
     /// Free block of memory.
     /// Returns amount of memory returned to the device.
-    fn free(&mut self, device: &B::Device, block: Self::Block) -> Size;
+    fn free(&mut self, device: &B::Device, block: Self::Block) -> RawSize;
 }
 
 unsafe fn allocate_memory_helper<B: hal::Backend>(
@@ -54,11 +54,11 @@ unsafe fn allocate_memory_helper<B: hal::Backend>(
     memory_type: hal::MemoryTypeId,
     size: Size,
     memory_properties: hal::memory::Properties,
-    non_coherent_atom_size: Option<AtomSize>,
+    non_coherent_atom_size: Option<Size>,
 ) -> Result<(Memory<B>, Option<NonNull<u8>>), hal::device::AllocationError> {
     use hal::device::Device as _;
 
-    let raw = device.allocate_memory(memory_type, size)?;
+    let raw = device.allocate_memory(memory_type, size.get())?;
 
     let ptr = if memory_properties.contains(hal::memory::Properties::CPU_VISIBLE) {
         match device.map_memory(&raw, hal::memory::Segment::ALL) {

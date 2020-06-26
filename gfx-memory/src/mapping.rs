@@ -1,5 +1,5 @@
 use {
-    crate::{memory::Memory, Size},
+    crate::{memory::Memory, RawSize},
     hal::{device::Device as _, Backend},
     std::{iter, ops::Range, ptr::NonNull, slice},
 };
@@ -56,11 +56,11 @@ pub struct MappedRange<'a, B: Backend> {
     ptr: NonNull<u8>,
 
     /// Range of mapped memory.
-    mapping_range: Range<Size>,
+    mapping_range: Range<RawSize>,
 
     /// Mapping range requested by caller.
     /// Must be subrange of `mapping_range`.
-    requested_range: Range<Size>,
+    requested_range: Range<RawSize>,
 }
 
 impl<'a, B: Backend> MappedRange<'a, B> {
@@ -74,8 +74,8 @@ impl<'a, B: Backend> MappedRange<'a, B> {
     pub(crate) unsafe fn from_raw(
         memory: &'a Memory<B>,
         ptr: *mut u8,
-        mapping_range: Range<Size>,
-        requested_range: Range<Size>,
+        mapping_range: Range<RawSize>,
+        requested_range: Range<RawSize>,
     ) -> Self {
         debug_assert!(
             mapping_range.start < mapping_range.end,
@@ -120,7 +120,7 @@ impl<'a, B: Backend> MappedRange<'a, B> {
     }
 
     /// Get mapped range.
-    pub fn range(&self) -> Range<Size> {
+    pub fn range(&self) -> Range<RawSize> {
         self.requested_range.clone()
     }
 

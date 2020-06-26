@@ -8,11 +8,13 @@ use crate::{
 use hal::{device::Device as _, Backend};
 use std::{collections::VecDeque, ops::Range, ptr::NonNull, sync::Arc};
 
+type LineCount = u32;
+
 /// Memory block allocated from `LinearAllocator`.
 #[derive(Debug)]
 pub struct LinearBlock<B: Backend> {
     memory: Arc<Memory<B>>,
-    line_index: Size,
+    line_index: LineCount,
     ptr: Option<NonNull<u8>>,
     range: Range<Size>,
 }
@@ -95,7 +97,7 @@ pub struct LinearAllocator<B: Backend> {
     memory_type: hal::MemoryTypeId,
     memory_properties: hal::memory::Properties,
     line_size: Size,
-    finished_lines_count: Size,
+    finished_lines_count: LineCount,
     lines: VecDeque<Line<B>>,
     non_coherent_atom_size: Option<AtomSize>,
     /// Previously used lines that have been replaced, kept around to use next time a new line is needed.
@@ -239,7 +241,7 @@ impl<B: Backend> Allocator<B> for LinearAllocator<B> {
             return Err(hal::device::AllocationError::TooManyObjects);
         }
 
-        let lines_count = self.lines.len() as Size;
+        let lines_count = self.lines.len() as LineCount;
         if let Some(line) = self.lines.back_mut() {
             let aligned_offset =
                 crate::align_offset(line.allocated, unsafe { AtomSize::new_unchecked(align) });
@@ -260,32 +262,35 @@ impl<B: Backend> Allocator<B> for LinearAllocator<B> {
             }
         }
 
-        let (mut line, new_allocation_size) = if let Some(line) = self.unused_lines.pop() {
-            (line, 0)
-        } else {
-            log::trace!("Allocated `Line` of size {}", self.line_size);
-            let (memory, ptr) = unsafe {
-                super::allocate_memory_helper(
-                    device,
-                    self.memory_type,
-                    self.line_size,
-                    self.memory_properties,
-                    self.non_coherent_atom_size,
-                )?
-            };
+        let (line, new_allocation_size) = match self.unused_lines.pop() {
+            Some(mut line) => {
+                line.allocated = size;
+                line.freed = 0;
+                (line, 0)
+            }
+            None => {
+                log::trace!("Allocated `Line` of size {}", self.line_size);
+                let (memory, ptr) = unsafe {
+                    super::allocate_memory_helper(
+                        device,
+                        self.memory_type,
+                        self.line_size,
+                        self.memory_properties,
+                        self.non_coherent_atom_size,
+                    )?
+                };
 
-            (
-                Line {
-                    allocated: size,
-                    freed: 0,
-                    ptr,
-                    memory: Arc::new(memory),
-                },
-                self.line_size,
-            )
+                (
+                    Line {
+                        allocated: size,
+                        freed: 0,
+                        ptr,
+                        memory: Arc::new(memory),
+                    },
+                    self.line_size,
+                )
+            }
         };
-        line.allocated = size;
-        line.freed = 0;
 
         let block = LinearBlock {
             line_index: self.finished_lines_count + lines_count,

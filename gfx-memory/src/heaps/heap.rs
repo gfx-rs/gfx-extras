@@ -1,13 +1,13 @@
 use crate::{
     stats::{MemoryHeapUtilization, MemoryUtilization},
-    Size,
+    RawSize, Size,
 };
 
 #[derive(Debug)]
 pub(super) struct MemoryHeap {
     size: Size,
-    used: Size,
-    effective: Size,
+    used: RawSize,
+    effective: RawSize,
 }
 
 impl MemoryHeap {
@@ -19,22 +19,22 @@ impl MemoryHeap {
         }
     }
 
-    pub(super) fn available(&self) -> Size {
-        if self.used > self.size {
+    pub(super) fn available(&self) -> RawSize {
+        if self.used > self.size.get() {
             log::warn!("Heap size exceeded");
             0
         } else {
-            self.size - self.used
+            self.size.get() - self.used
         }
     }
 
-    pub(super) fn allocated(&mut self, used: Size, effective: Size) {
+    pub(super) fn allocated(&mut self, used: RawSize, effective: RawSize) {
         self.used += used;
         self.effective += effective;
         debug_assert!(self.used >= self.effective);
     }
 
-    pub(super) fn freed(&mut self, used: Size, effective: Size) {
+    pub(super) fn freed(&mut self, used: RawSize, effective: RawSize) {
         self.used -= used;
         self.effective -= effective;
         debug_assert!(self.used >= self.effective);

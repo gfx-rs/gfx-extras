@@ -1,4 +1,4 @@
-use crate::Size;
+use crate::{RawSize, Size};
 #[cfg(feature = "colorful")]
 use colorful::{core::color_string::CString, Color, Colorful as _};
 use hal::memory::Properties;
@@ -7,9 +7,9 @@ use hal::memory::Properties;
 #[derive(Clone, Copy, Debug)]
 pub struct MemoryUtilization {
     /// Total number of bytes allocated.
-    pub used: Size,
+    pub used: RawSize,
     /// Effective number bytes allocated.
-    pub effective: Size,
+    pub effective: RawSize,
 }
 
 /// Memory utilization of one heap.
@@ -48,11 +48,11 @@ pub struct TotalMemoryUtilization {
 #[cfg(feature = "colorful")]
 impl std::fmt::Display for TotalMemoryUtilization {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        const MB: Size = 1024 * 1024;
+        const MB: RawSize = 1024 * 1024;
 
         writeln!(fmt, "!!! Memory utilization !!!")?;
         for (index, heap) in self.heaps.iter().enumerate() {
-            let size = heap.size;
+            let size = heap.size.get();
             let MemoryUtilization { used, effective } = heap.utilization;
             let usage_basis_points = used * 10000 / size;
             let fill = if usage_basis_points > 10000 {
@@ -106,7 +106,7 @@ impl std::fmt::Display for TotalMemoryUtilization {
 }
 
 #[cfg(feature = "colorful")]
-fn format_basis_points(basis_points: Size) -> CString {
+fn format_basis_points(basis_points: RawSize) -> CString {
     debug_assert!(basis_points <= 10000);
     let s = format!("{:>3}.{:02}%", basis_points / 100, basis_points % 100);
     if basis_points > 7500 {
@@ -123,7 +123,7 @@ fn format_basis_points(basis_points: Size) -> CString {
 }
 
 #[cfg(feature = "colorful")]
-fn format_basis_points_inverted(basis_points: Size) -> CString {
+fn format_basis_points_inverted(basis_points: RawSize) -> CString {
     debug_assert!(basis_points <= 10000);
     let s = format!("{:>3}.{:02}%", basis_points / 100, basis_points % 100);
     if basis_points > 9900 {

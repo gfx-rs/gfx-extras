@@ -94,7 +94,7 @@ impl<B: hal::Backend> Heaps<B> {
             heaps: hal_memory_properties
                 .memory_heaps
                 .iter()
-                .map(|&size| MemoryHeap::new(size))
+                .map(|&size| MemoryHeap::new(Size::new(size).unwrap()))
                 .collect(),
         }
     }
@@ -146,16 +146,13 @@ impl<B: hal::Backend> Heaps<B> {
             device,
             memory_index as u32,
             kind,
-            requirements.size,
-            requirements.alignment,
+            Size::new(requirements.size).unwrap(),
+            Size::new(requirements.alignment).unwrap(),
         )
     }
 
-    /// Allocate memory block
-    /// from `memory_index` specified,
-    /// for intended `usage`,
-    /// with `size`
-    /// and `align` requirements.
+    /// Allocate memory block from `memory_index` specified,
+    /// for intended `usage`, with `size`, and `align` requirements.
     fn allocate_from(
         &mut self,
         device: &B::Device,
@@ -175,7 +172,7 @@ impl<B: hal::Backend> Heaps<B> {
         let memory_type = &mut self.types[memory_index as usize];
         let memory_heap = &mut self.heaps[memory_type.heap_index()];
 
-        if memory_heap.available() < size {
+        if memory_heap.available() < size.get() {
             return Err(hal::device::OutOfMemory::Device.into());
         }
 
@@ -187,7 +184,7 @@ impl<B: hal::Backend> Heaps<B> {
             }
             Err(e) => return Err(e.into()),
         };
-        memory_heap.allocated(allocated, flavor.size());
+        memory_heap.allocated(allocated, flavor.size().get());
 
         Ok(MemoryBlock {
             flavor,
@@ -210,7 +207,7 @@ impl<B: hal::Backend> Heaps<B> {
         let memory_type = &mut self.types[memory_index as usize];
         let memory_heap = &mut self.heaps[memory_type.heap_index()];
         let freed = memory_type.free(device, block.flavor);
-        memory_heap.freed(freed, size);
+        memory_heap.freed(freed, size.get());
     }
 
     /// Clear allocators.

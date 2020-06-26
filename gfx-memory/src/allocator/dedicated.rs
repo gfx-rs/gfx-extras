@@ -3,7 +3,7 @@ use crate::{
     block::Block,
     mapping::MappedRange,
     memory::Memory,
-    AtomSize, Size,
+    RawSize, Size,
 };
 use hal::{device::Device as _, Backend};
 use std::ptr::NonNull;
@@ -49,7 +49,7 @@ impl<B: Backend> Block<B> for DedicatedBlock<B> {
     fn segment(&self) -> hal::memory::Segment {
         hal::memory::Segment {
             offset: 0,
-            size: Some(self.memory.size()),
+            size: Some(self.memory.size().get()),
         }
     }
 
@@ -60,7 +60,7 @@ impl<B: Backend> Block<B> for DedicatedBlock<B> {
     ) -> Result<MappedRange<'a, B>, hal::device::MapError> {
         let requested_range = segment.offset..match segment.size {
             Some(s) => segment.offset + s,
-            None => self.memory.size(),
+            None => self.memory.size().get(),
         };
         let mapping_range = match self.memory.non_coherent_atom_size {
             Some(atom) => crate::align_range(&requested_range, atom),
@@ -94,8 +94,8 @@ impl<B: Backend> Block<B> for DedicatedBlock<B> {
 pub struct DedicatedAllocator {
     memory_type: hal::MemoryTypeId,
     memory_properties: hal::memory::Properties,
-    non_coherent_atom_size: Option<AtomSize>,
-    used: Size,
+    non_coherent_atom_size: Option<Size>,
+    used: RawSize,
 }
 
 impl DedicatedAllocator {
@@ -110,7 +110,7 @@ impl DedicatedAllocator {
             memory_type,
             memory_properties,
             non_coherent_atom_size: if crate::is_non_coherent_visible(memory_properties) {
-                AtomSize::new(non_coherent_atom_size)
+                Some(non_coherent_atom_size)
             } else {
                 None
             },
@@ -129,7 +129,7 @@ impl<B: Backend> Allocator<B> for DedicatedAllocator {
         device: &B::Device,
         size: Size,
         _align: Size,
-    ) -> Result<(DedicatedBlock<B>, Size), hal::device::AllocationError> {
+    ) -> Result<(DedicatedBlock<B>, RawSize), hal::device::AllocationError> {
         let size = match self.non_coherent_atom_size {
             Some(atom) => crate::align_size(size, atom),
             None => size,
@@ -146,19 +146,19 @@ impl<B: Backend> Allocator<B> for DedicatedAllocator {
             )?
         };
 
-        self.used += size;
-        Ok((DedicatedBlock { memory, ptr }, size))
+        self.used += size.get();
+        Ok((DedicatedBlock { memory, ptr }, size.get()))
     }
 
-    fn free(&mut self, device: &B::Device, block: DedicatedBlock<B>) -> Size {
+    fn free(&mut self, device: &B::Device, block: DedicatedBlock<B>) -> RawSize {
         let size = block.memory.size();
         log::trace!("Free block of size: {}", size);
-        self.used -= size;
+        self.used -= size.get();
         unsafe {
             device.unmap_memory(block.memory.raw());
             device.free_memory(block.memory.into_raw());
         }
-        size
+        size.get()
     }
 }
 

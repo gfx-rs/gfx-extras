@@ -11,7 +11,7 @@ license = "MIT OR Apache-2.0"
 documentation = "https://docs.rs/gfx-descriptor"
 keywords = ["graphics", "gfx-hal"]
 categories = ["rendering"]
-description = "fx-hal memory allocator"
+description = "gfx-hal memory allocator"
 
 [features]
 

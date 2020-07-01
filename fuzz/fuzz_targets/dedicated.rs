@@ -5,6 +5,6 @@ use gfx_memory::DedicatedAllocator;
 use hal::{memory::Properties, MemoryTypeId};
 
 libfuzzer_sys::fuzz_target!(|allocations: Vec<Allocation>| {
-    let allocator = DedicatedAllocator::new(MemoryTypeId(0), Properties::DEVICE_LOCAL, 1);
+    let allocator = DedicatedAllocator::new(MemoryTypeId(0), Properties::empty(), 1);
     perform_allocations(allocator, allocations);
 });

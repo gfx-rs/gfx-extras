@@ -2,7 +2,7 @@
 
 use gfx_backend_empty::Backend;
 use gfx_memory::{Allocator, DedicatedAllocator, DedicatedBlock};
-use gfx_memory_fuzz::{create_device, Allocation};
+use gfx_fuzz::{create_device, Allocation};
 use hal::{memory::Properties as MemoryProperties, MemoryTypeId};
 use libfuzzer_sys::fuzz_target;
 

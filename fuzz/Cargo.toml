@@ -1,5 +1,5 @@
 [package]
-name = "gfx-memory-fuzz"
+name = "gfx-fuzz"
 version = "0.0.0"
 authors = ["Automatically generated"]
 publish = false
@@ -11,7 +11,7 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.3"
 arbitrary = { version = "0.4", features = ["derive"] }
-gfx-memory = { path = ".." }
+gfx-memory = { path = "../gfx-memory" }
 hal = { package = "gfx-hal", version = "0.5" }
 gfx-backend-empty = "0.5"
 

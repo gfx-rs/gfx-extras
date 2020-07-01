@@ -57,10 +57,11 @@ pub fn perform_allocations(
     for allocation in allocations.iter() {
         let size = allocation.size as u64;
         let alignment = allocation.alignment as u64;
-        let (block, _size) = allocator
-            .alloc(&device, size, alignment)
-            .expect("Failed to allocate memory");
-        blocks.push(block);
+        // Ensure the allocator either successfully allocates a block of memory,
+        // or safely returns an error.
+        if let Ok((block, _size)) = allocator.alloc(&device, size, alignment) {
+            blocks.push(block);
+        }
     }
 
     // Deallocate all blocks.

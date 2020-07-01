@@ -31,3 +31,9 @@ name = "general"
 path = "fuzz_targets/general.rs"
 test = false
 doc = false
+
+[[bin]]
+name = "linear"
+path = "fuzz_targets/linear.rs"
+test = false
+doc = false

@@ -1,0 +1,39 @@
+[package]
+name = "gfx-fuzz"
+version = "0.0.0"
+authors = ["Automatically generated"]
+publish = false
+edition = "2018"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.3"
+arbitrary = { version = "0.4", features = ["derive"] }
+gfx-memory = { path = "../gfx-memory" }
+hal = { package = "gfx-hal", version = "0.5" }
+# Need at least 0.5.1 for the mocked empty backend
+gfx-backend-empty = "~0.5.1"
+
+# Prevent this from interfering with workspaces
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "dedicated"
+path = "fuzz_targets/dedicated.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "general"
+path = "fuzz_targets/general.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "linear"
+path = "fuzz_targets/linear.rs"
+test = false
+doc = false

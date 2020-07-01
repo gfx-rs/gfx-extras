@@ -28,3 +28,9 @@ name = "dedicated"
 path = "fuzz_targets/dedicated.rs"
 test = false
 doc = false
+
+[[bin]]
+name = "general"
+path = "fuzz_targets/general.rs"
+test = false
+doc = false

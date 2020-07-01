@@ -13,10 +13,11 @@ libfuzzer-sys = "0.3"
 arbitrary = { version = "0.4", features = ["derive"] }
 gfx-memory = { path = ".." }
 hal = { package = "gfx-hal", version = "0.5" }
-gfx-backend-empty = { git = "https://github.com/GabrielMajeri/gfx", branch = "hal-0.5" }
+gfx-backend-empty = "0.5"
 
 [patch.crates-io]
-gfx-hal = { git = "https://github.com/GabrielMajeri/gfx", branch = "hal-0.5" }
+gfx-hal = { git = "https://github.com/gfx-rs/gfx", branch = "hal-0.5" }
+gfx-backend-empty = { git = "https://github.com/gfx-rs/gfx", branch = "hal-0.5" }
 
 # Prevent this from interfering with workspaces
 [workspace]

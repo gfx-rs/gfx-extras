@@ -13,11 +13,8 @@ libfuzzer-sys = "0.3"
 arbitrary = { version = "0.4", features = ["derive"] }
 gfx-memory = { path = "../gfx-memory" }
 hal = { package = "gfx-hal", version = "0.5" }
-gfx-backend-empty = "0.5"
-
-[patch.crates-io]
-gfx-hal = { git = "https://github.com/gfx-rs/gfx", branch = "hal-0.5" }
-gfx-backend-empty = { git = "https://github.com/gfx-rs/gfx", branch = "hal-0.5" }
+# Need at least 0.5.1 for the mocked empty backend
+gfx-backend-empty = "~0.5.1"
 
 # Prevent this from interfering with workspaces
 [workspace]

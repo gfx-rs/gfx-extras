@@ -9,9 +9,12 @@ pub use hal::pso::{
     DescriptorType, ImageDescriptorType,
 };
 
-const DESCRIPTOR_TYPES_COUNT: usize = 15;
+/// Length of the [`DESCRIPTOR_TYPES`] array.
+pub const DESCRIPTOR_TYPES_COUNT: usize = 15;
 
-const DESCRIPTOR_TYPES: [DescriptorType; DESCRIPTOR_TYPES_COUNT] = [
+/// List of all possible descriptor types, with all the possible values
+/// the enum variants could have.
+pub const DESCRIPTOR_TYPES: [DescriptorType; DESCRIPTOR_TYPES_COUNT] = [
     DescriptorType::Sampler,
     DescriptorType::Image {
         ty: ImageDescriptorType::Sampled { with_sampler: true },

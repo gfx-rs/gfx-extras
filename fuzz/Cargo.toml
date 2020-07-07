@@ -11,10 +11,11 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.3"
 arbitrary = { version = "0.4", features = ["derive"] }
+gfx-descriptor = { path = "../gfx-descriptor" }
 gfx-memory = { path = "../gfx-memory" }
 hal = { package = "gfx-hal", version = "0.5" }
-# Need at least 0.5.1 for the mocked empty backend
-gfx-backend-empty = "~0.5.1"
+# Need at least 0.5.2 for the mocked empty backend
+gfx-backend-empty = "0.5.2"
 
 # Prevent this from interfering with workspaces
 [workspace]
@@ -23,6 +24,12 @@ members = ["."]
 [[bin]]
 name = "dedicated"
 path = "fuzz_targets/dedicated.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "descriptor"
+path = "fuzz_targets/descriptor.rs"
 test = false
 doc = false
 

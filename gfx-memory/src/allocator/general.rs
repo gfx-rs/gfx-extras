@@ -158,10 +158,12 @@ type BlockMask = u64;
 
 const MIN_BLOCKS_PER_CHUNK: u32 = 8;
 const MAX_BLOCKS_PER_CHUNK: u32 = mem::size_of::<BlockMask>() as u32 * 8;
+const LARGE_BLOCK_THRESHOLD: Size = 0x10000;
 
 #[test]
-fn test_block_counts() {
+fn test_constants() {
     assert!(MIN_BLOCKS_PER_CHUNK < MAX_BLOCKS_PER_CHUNK);
+    assert!(LARGE_BLOCK_THRESHOLD * 2 >= MIN_BLOCKS_PER_CHUNK as Size);
 }
 
 impl<B: Backend> GeneralAllocator<B> {
@@ -429,7 +431,7 @@ impl<B: Backend> GeneralAllocator<B> {
         size_entry.total_blocks += 1;
 
         let overhead = (MIN_BLOCKS_PER_CHUNK as Size - 1) / size_entry.total_blocks;
-        if overhead >= 1 {
+        if overhead >= 1 && block_size >= LARGE_BLOCK_THRESHOLD {
             // this is chosen is such a way that the required `count`
             // is less than `MIN_BLOCKS_PER_CHUNK`.
             let ideal_chunk_size = crate::align_size(

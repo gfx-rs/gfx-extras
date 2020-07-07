@@ -429,27 +429,35 @@ impl<B: Backend> GeneralAllocator<B> {
         size_entry.total_blocks += 1;
 
         let overhead = (MIN_BLOCKS_PER_CHUNK as Size - 1) / size_entry.total_blocks;
-
         if overhead >= 1 {
             // this is chosen is such a way that the required `count`
             // is less than `MIN_BLOCKS_PER_CHUNK`.
-            let divisor = MIN_BLOCKS_PER_CHUNK as Size >> 1;
-            if let Some(&size) = self
+            let ideal_chunk_size = crate::align_size(
+                block_size * 2 / MIN_BLOCKS_PER_CHUNK as Size,
+                crate::AtomSize::new(align).unwrap(),
+            );
+            let chunk_size = match self
                 .chunks
-                .range((block_size / divisor)..block_size * overhead)
+                .range(ideal_chunk_size..block_size * overhead)
                 .find(|&size| size % align == 0)
             {
-                return self.alloc_from_entry(
-                    device,
-                    size,
-                    ((block_size - 1) / size + 1) as u32,
-                    align,
-                );
-            }
-        }
+                Some(&size) => size,
+                None => {
+                    self.chunks.insert(ideal_chunk_size);
+                    ideal_chunk_size
+                }
+            };
 
-        self.chunks.insert(block_size);
-        self.alloc_from_entry(device, block_size, 1, align)
+            self.alloc_from_entry(
+                device,
+                chunk_size,
+                ((block_size - 1) / chunk_size + 1) as u32,
+                align,
+            )
+        } else {
+            self.chunks.insert(block_size);
+            self.alloc_from_entry(device, block_size, 1, align)
+        }
     }
 
     fn free_chunk(&mut self, device: &B::Device, chunk: Chunk<B>, block_size: Size) -> Size {

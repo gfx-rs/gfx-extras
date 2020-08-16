@@ -175,6 +175,11 @@ impl DescriptorCounts {
         counts: [0; DESCRIPTOR_TYPES_COUNT],
     };
 
+    /// Returns true if this indicates a completely empty descriptor layout.
+    pub fn is_empty(&self) -> bool {
+        self.counts == Self::EMPTY.counts
+    }
+
     /// Add a single layout binding.
     /// Useful when created with `DescriptorCounts::EMPTY`.
     pub fn add_binding(&mut self, binding: DescriptorSetLayoutBinding) {

@@ -283,6 +283,11 @@ impl<B: Backend> DescriptorAllocator<B> {
             return Ok(());
         }
 
+        assert!(
+            !layout_counts.is_empty(),
+            "Allocating an empty descriptor layout is not valid",
+        );
+
         log::trace!(
             "Allocating {} sets with layout {:?} @ {:?}",
             count,

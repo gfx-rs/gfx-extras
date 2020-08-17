@@ -1,6 +1,6 @@
 [package]
 name = "gfx-memory"
-version = "0.1.3"
+version = "0.2.0"
 authors = [
 	"omni-viral <scareaangel@gmail.com>",
 	"The Gfx-rs Developers",
@@ -16,10 +16,9 @@ description = "gfx-hal memory allocator"
 [features]
 
 [dependencies]
-colorful = { version = "0.2", optional = true }
 fxhash = "0.2"
-hal = { package = "gfx-hal", version = "0.5" }
-hibitset = {version = "0.6", default-features = false}
+hal = { package = "gfx-hal", version = "0.6" }
+hibitset = { version = "0.6", default-features = false }
 log = "0.4"
 slab = "0.4"
 

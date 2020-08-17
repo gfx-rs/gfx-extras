@@ -1,5 +1,9 @@
 # Change Log
 
+## memory-0.2, descriptor-0.2
+  - update to gfx-hal-0.6
+  - remove `colorful` dependency
+
 ## memory-0.1.3 (07-04-2020)
   - fix chunk refcounting in General allocator for dedicated blocks
 

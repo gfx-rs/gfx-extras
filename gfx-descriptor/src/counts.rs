@@ -4,6 +4,8 @@ use std::{
     ops::{AddAssign, SubAssign},
 };
 
+use arrayvec::ArrayVec;
+
 pub use hal::pso::{
     BufferDescriptorFormat, BufferDescriptorType, DescriptorRangeDesc, DescriptorSetLayoutBinding,
     DescriptorType, ImageDescriptorType,
@@ -181,8 +183,8 @@ impl DescriptorCounts {
         self.counts[descriptor_type_index(binding.ty)] += binding.count as u32;
     }
 
-    /// Iterate through counts yelding descriptor types and their amount.
-    pub fn iter(&self) -> impl '_ + Iterator<Item = DescriptorRangeDesc> {
+    /// Return the filtered list of descriptors.
+    pub fn filtered(&self) -> ArrayVec<[DescriptorRangeDesc; DESCRIPTOR_TYPES_COUNT]> {
         self.counts
             .iter()
             .enumerate()
@@ -191,6 +193,7 @@ impl DescriptorCounts {
                 count: *count as usize,
                 ty: DESCRIPTOR_TYPES[index],
             })
+            .collect()
     }
 
     /// Multiply all the counts by a value.

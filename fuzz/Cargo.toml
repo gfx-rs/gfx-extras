@@ -13,9 +13,8 @@ libfuzzer-sys = "0.3"
 arbitrary = { version = "0.4", features = ["derive"] }
 gfx-descriptor = { path = "../gfx-descriptor" }
 gfx-memory = { path = "../gfx-memory" }
-hal = { package = "gfx-hal", version = "0.5" }
-# Need at least 0.5.2 for the mocked empty backend
-gfx-backend-empty = "0.5.2"
+hal = { package = "gfx-hal", version = "0.6" }
+gfx-backend-empty = "0.6"
 
 # Prevent this from interfering with workspaces
 [workspace]

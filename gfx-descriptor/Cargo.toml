@@ -1,6 +1,6 @@
 [package]
 name = "gfx-descriptor"
-version = "0.1.0"
+version = "0.2.0"
 authors = [
 	"omni-viral <scareaangel@gmail.com>",
 	"The Gfx-rs Developers",
@@ -14,6 +14,7 @@ categories = ["rendering"]
 description = "gfx-hal descriptor allocator"
 
 [dependencies]
+arrayvec = "0.5"
 fxhash = "0.2"
-hal = { package = "gfx-hal", version = "0.5" }
+hal = { package = "gfx-hal", version = "0.6" }
 log = "0.4"

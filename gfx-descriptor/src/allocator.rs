@@ -60,10 +60,9 @@ impl<B: Backend> Allocation<B> {
             )
         } {
             Err(err) => {
-                unsafe { pool.free_sets(self.sets.drain(sets_were..)) };
-                Err(match err {
-                    AllocationError::Host => OutOfMemory::Host,
-                    AllocationError::Device => OutOfMemory::Device,
+                unsafe { pool.free(self.sets.drain(sets_were..)) };
+                match err {
+                    AllocationError::OutOfMemory(oom) => Err(oom),
                     _ => {
                         // We check pool for free descriptors and sets before calling this function,
                         // so it can't be exhausted.
@@ -78,7 +77,7 @@ impl<B: Backend> Allocation<B> {
                         // """
                         panic!("Unexpected error: {:?}", err);
                     }
-                })
+                }
             }
             Ok(()) => {
                 assert_eq!(self.sets.len(), sets_were + count as usize);
@@ -178,7 +177,7 @@ impl<B: Backend> DescriptorBucket<B> {
             let mut raw = unsafe {
                 device.create_descriptor_pool(
                     size as usize,
-                    pool_counts.iter(),
+                    pool_counts.filtered(),
                     DescriptorPoolCreateFlags::FREE_DESCRIPTOR_SET,
                 )?
             };
@@ -207,7 +206,7 @@ impl<B: Backend> DescriptorBucket<B> {
         let pool = &mut self.pools[(pool_id - self.pools_offset) as usize];
         let mut count = 0;
         unsafe {
-            pool.raw.free_sets(sets.into_iter().map(|set| {
+            pool.raw.free(sets.into_iter().map(|set| {
                 count += 1;
                 set
             }))

@@ -18,7 +18,7 @@ pub enum HeapsError {
     /// No memory types among required for resource were found.
     NoSuitableMemory {
         /// Mask of the allowed memory types.
-        mask: u64,
+        mask: u32,
         /// Requested properties.
         properties: hal::memory::Properties,
     },
@@ -113,7 +113,7 @@ impl<B: hal::Backend> Heaps<B> {
                 .types
                 .iter()
                 .enumerate()
-                .filter(|(index, _)| (requirements.type_mask & (1u64 << index)) != 0)
+                .filter(|(index, _)| (requirements.type_mask & (1u32 << index)) != 0)
                 .filter_map(|(index, mt)| {
                     if mt.properties().contains(usage.properties_required()) {
                         let fitness = usage.memory_fitness(mt.properties());

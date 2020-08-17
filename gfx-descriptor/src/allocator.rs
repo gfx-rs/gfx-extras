@@ -169,7 +169,20 @@ impl<B: Backend> DescriptorBucket<B> {
 
         while count > 0 {
             let size = self.new_pool_size(count);
-            let pool_counts = layout_counts.multiply(size);
+            let pool_counts = if *layout_counts == DescriptorCounts::EMPTY {
+                // add a dummy binding so that our counts are not totally empty
+                let mut pool_counts = DescriptorCounts::EMPTY;
+                pool_counts.add_binding(hal::pso::DescriptorSetLayoutBinding {
+                    binding: 0,
+                    ty: hal::pso::DescriptorType::Sampler,
+                    count: 1,
+                    stage_flags: hal::pso::ShaderStageFlags::empty(),
+                    immutable_samplers: false,
+                });
+                pool_counts
+            } else {
+                layout_counts.multiply(size)
+            };
             log::trace!(
                 "Create new pool with {} sets and {:?} descriptors",
                 size,

@@ -36,6 +36,7 @@ impl<B: hal::Backend> MemoryType<B> {
         general_config: GeneralConfig,
         linear_config: LinearConfig,
         non_coherent_atom_size: Size,
+        total_heap_size: Size,
     ) -> Self {
         MemoryType {
             heap_index: hal_memory_type.heap_index,
@@ -50,6 +51,7 @@ impl<B: hal::Backend> MemoryType<B> {
                 hal_memory_type.properties,
                 general_config,
                 non_coherent_atom_size,
+                total_heap_size,
             ),
             linear: LinearAllocator::new(
                 type_id,

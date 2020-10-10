@@ -81,13 +81,14 @@ impl<B: hal::Backend> Heaps<B> {
                 .iter()
                 .enumerate()
                 .map(|(index, mt)| {
-                    assert!(mt.heap_index < hal_memory_properties.memory_heaps.len());
+                    let total_heap_size = hal_memory_properties.memory_heaps[mt.heap_index];
                     MemoryType::new(
                         hal::MemoryTypeId(index),
                         mt,
                         config_general,
                         config_linear,
                         non_coherent_atom_size,
+                        total_heap_size,
                     )
                 })
                 .collect(),
@@ -137,7 +138,8 @@ impl<B: hal::Backend> Heaps<B> {
                 })
                 .max_by_key(|&(_, _, fitness)| fitness)
                 .ok_or_else(|| {
-                    log::error!("All suitable heaps are exhausted. {:#?}", self);
+                    log::error!("All suitable heaps are exhausted!");
+                    log::warn!("{}", self.utilization());
                     hal::device::OutOfMemory::Device
                 })?
         };

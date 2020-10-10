@@ -96,6 +96,11 @@ pub struct GeneralConfig {
 
     /// Minimum size of device allocation.
     pub min_device_allocation: Size,
+
+    /// Number of most significant bits that are left in the allocated
+    /// sizes that are rounded up. Aggressively rounding up increases
+    /// the chances to re-use the blocks.
+    pub significant_size_bits: u32,
 }
 
 /// No-fragmentation allocator.
@@ -117,6 +122,10 @@ pub struct GeneralAllocator<B: Backend> {
 
     /// Minimum size of device allocation.
     min_device_allocation: Size,
+
+    /// Number of most significant bits that are left in the allocated
+    /// sizes that are rounded up.
+    significant_size_bits: u32,
 
     /// Chunk lists.
     sizes: HashMap<Size, SizeEntry<B>, BuildHasherDefault<fxhash::FxHasher>>,
@@ -214,6 +223,7 @@ impl<B: Backend> GeneralAllocator<B> {
             block_size_granularity,
             max_chunk_size,
             min_device_allocation: config.min_device_allocation,
+            significant_size_bits: config.significant_size_bits,
             sizes: HashMap::default(),
             chunks: BTreeSet::new(),
             non_coherent_atom_size,
@@ -519,21 +529,19 @@ impl<B: Backend> Allocator<B> for GeneralAllocator<B> {
         align: Size,
     ) -> Result<(GeneralBlock<B>, Size), hal::device::AllocationError> {
         debug_assert!(align.is_power_of_two());
-        let aligned_size = ((size - 1) | (align - 1) | (self.block_size_granularity - 1)) + 1;
-        let map_aligned_size = match self.non_coherent_atom_size {
-            Some(atom) => crate::align_size(aligned_size, atom),
-            None => aligned_size,
-        };
+        let round_mask = round_mask(size, self.significant_size_bits);
+        let aligned_size =
+            ((size - 1) | (align - 1) | (self.block_size_granularity - 1) | round_mask) + 1;
 
         log::trace!(
             "Allocate general block: size: {}, align: {}, aligned size: {}, type: {}",
             size,
             align,
-            map_aligned_size,
+            aligned_size,
             self.memory_type.0
         );
 
-        self.alloc_block(device, map_aligned_size, align)
+        self.alloc_block(device, aligned_size, align)
     }
 
     fn free(&mut self, device: &B::Device, block: GeneralBlock<B>) -> Size {
@@ -687,4 +695,22 @@ impl<B: Backend> Chunk<B> {
             ChunkFlavor::General(ref block) => block.ptr,
         }
     }
+}
+
+/// Returns the mask of lest (N - `significant_bits`) bits, where
+/// N is the number of bits in a value.
+fn round_mask(value: Size, significant_bits: u32) -> Size {
+    let num_bits = mem::size_of::<Size>() as u32 * 8 - value.leading_zeros();
+    match num_bits.checked_sub(significant_bits) {
+        Some(diff) => (1 << diff) - 1,
+        None => 0,
+    }
+}
+
+#[test]
+fn test_round_mask() {
+    assert_eq!(round_mask(0, 0), 0);
+    assert_eq!(round_mask(1, 0), 1);
+    assert_eq!(round_mask(3, 2), 0);
+    assert_eq!(round_mask(6, 2), 1);
 }

@@ -18,11 +18,12 @@ impl Arbitrary for FuzzingInput {
             block_size_granularity: *u.choose(POWERS_OF_TWO)?,
             max_chunk_size_as_heap_total_fraction: *u.choose(POWERS_OF_TWO)? as usize,
             min_device_allocation: *u.choose(POWERS_OF_TWO)?,
+            significant_size_bits: *u.choose(&[0, 1, 2, 3])?,
         };
         let allocations = u.arbitrary()?;
         let input = Self {
             config,
-            total_memory: *u.choose(POWERS_OF_TWO)? << 20,
+            total_memory: 1 << *u.choose(&[8, 16, 20, 24, 28])?,
             allocations,
         };
         Ok(input)

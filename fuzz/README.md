@@ -12,6 +12,6 @@ $ cargo fuzz list
 
 Then run
 ```sh
-$ cargo fuzz run <fuzz target>
+$ cargo +nightly fuzz run <fuzz target>
 ```
 to start a fuzzing run.

@@ -6,7 +6,6 @@ use crate::{
     AtomSize, Size,
 };
 use hal::{device::Device as _, Backend};
-use hibitset::{BitSet, BitSetLike as _};
 use std::{
     collections::{BTreeSet, HashMap},
     hash::BuildHasherDefault,
@@ -130,6 +129,97 @@ pub struct GeneralAllocator<B: Backend> {
 //TODO: ensure Send and Sync
 unsafe impl<B: Backend> Send for GeneralAllocator<B> {}
 unsafe impl<B: Backend> Sync for GeneralAllocator<B> {}
+
+mod bit {
+    /// A hierarchical bitset hardcoded for 2 levels and only 64 bits.
+    #[derive(Debug, Default)]
+    pub struct BitSet {
+        mask: u64,
+        groups: u8,
+    }
+
+    impl BitSet {
+        const GROUP_SIZE: u32 = 8;
+
+        pub fn add(&mut self, index: u32) {
+            self.mask |= 1 << index;
+            self.groups |= 1 << (index / Self::GROUP_SIZE);
+        }
+
+        pub fn remove(&mut self, index: u32) {
+            self.mask &= !(1 << index);
+            let group_index = index / Self::GROUP_SIZE;
+            let group_mask = ((1 << Self::GROUP_SIZE) - 1) << (group_index * Self::GROUP_SIZE);
+            if self.mask & group_mask == 0 {
+                self.groups &= !(1 << group_index);
+            }
+        }
+
+        pub fn iter(&self) -> BitIterator {
+            BitIterator {
+                mask: self.mask,
+                groups: self.groups,
+                index: 0,
+            }
+        }
+    }
+
+    #[test]
+    fn test_bit_group() {
+        let mut bs = BitSet::default();
+        bs.add(13);
+        assert_eq!(bs.groups, 2);
+        bs.add(20);
+        assert_eq!(bs.groups, 6);
+        bs.add(23);
+        bs.remove(13);
+        assert_eq!(bs.groups, 4);
+    }
+
+    pub struct BitIterator {
+        mask: u64,
+        groups: u8,
+        index: u32,
+    }
+
+    impl BitIterator {
+        const TOTAL: u32 = std::mem::size_of::<super::Size>() as u32 * 8;
+    }
+
+    impl Iterator for BitIterator {
+        type Item = u32;
+        fn next(&mut self) -> Option<u32> {
+            let result = loop {
+                if self.index >= Self::TOTAL {
+                    return None;
+                }
+                if self.index & (BitSet::GROUP_SIZE - 1) == 0 && (self.groups & (1 << (self.index / BitSet::GROUP_SIZE))) == 0 {
+                    self.index += BitSet::GROUP_SIZE;
+                } else {
+                    if (self.mask & (1 << self.index)) != 0 {
+                        break self.index;
+                    }
+                    self.index += 1;
+                }
+            };
+            self.index += 1;
+            Some(result)
+        }
+    }
+
+    #[test]
+    fn test_bit_iter() {
+        let mut bs = BitSet::default();
+        let bits = &[2u32, 5, 24, 39, 40, 41, 42, 62];
+        for &index in bits {
+            bs.add(index);
+        }
+        let collected = bs.iter().collect::<Vec<_>>();
+        assert_eq!(&bits[..], &collected[..]);
+    }
+}
+
+use bit::BitSet;
 
 #[derive(Debug)]
 struct SizeEntry<B: Backend> {

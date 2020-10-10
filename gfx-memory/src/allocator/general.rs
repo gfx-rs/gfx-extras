@@ -90,9 +90,9 @@ pub struct GeneralConfig {
     /// All requests are rounded up to multiple of this value.
     pub block_size_granularity: Size,
 
-    /// Maximum chunk of blocks size.
-    /// Actual chunk size is `min(max_chunk_size, block_size * blocks_per_chunk)`
-    pub max_chunk_size: Size,
+    /// Maximum chunk size that is defined as (total heap memory) / N.
+    /// Any request above this metric gets a fresh dedicated allocation.
+    pub max_chunk_size_as_heap_total_fraction: usize,
 
     /// Minimum size of device allocation.
     pub min_device_allocation: Size,
@@ -175,6 +175,7 @@ impl<B: Backend> GeneralAllocator<B> {
         memory_properties: hal::memory::Properties,
         config: GeneralConfig,
         non_coherent_atom_size: Size,
+        total_heap_size: Size,
     ) -> Self {
         log::trace!(
             "Create new allocator: type: '{:?}', properties: '{:#?}' config: '{:#?}'",
@@ -188,19 +189,14 @@ impl<B: Backend> GeneralAllocator<B> {
             "Allocation granularity must be power of two"
         );
         assert!(
-            config.max_chunk_size.is_power_of_two(),
-            "Max chunk size must be power of two"
-        );
-
-        assert!(
             config.min_device_allocation.is_power_of_two(),
             "Min device allocation must be power of two"
         );
 
-        assert!(
-            config.min_device_allocation <= config.max_chunk_size,
-            "Min device allocation must be less than or equalt to max chunk size"
-        );
+        let max_chunk_size = (total_heap_size
+            / config.max_chunk_size_as_heap_total_fraction as Size)
+            .max(config.min_device_allocation)
+            .next_power_of_two();
 
         let (block_size_granularity, non_coherent_atom_size) =
             if crate::is_non_coherent_visible(memory_properties) {
@@ -216,17 +212,12 @@ impl<B: Backend> GeneralAllocator<B> {
             memory_type,
             memory_properties,
             block_size_granularity,
-            max_chunk_size: config.max_chunk_size,
+            max_chunk_size,
             min_device_allocation: config.min_device_allocation,
             sizes: HashMap::default(),
             chunks: BTreeSet::new(),
             non_coherent_atom_size,
         }
-    }
-
-    /// Maximum block size to allocate within a chunk that is another block.
-    pub fn max_sub_block_size(&self) -> Size {
-        self.max_chunk_size / MIN_BLOCKS_PER_CHUNK as Size
     }
 
     /// Allocate memory chunk from device.
@@ -279,7 +270,7 @@ impl<B: Backend> GeneralAllocator<B> {
         let requested_chunk_size = clamped_count as Size * block_size;
 
         // If smallest possible chunk size is larger then this allocator max allocation
-        if min_chunk_size > self.max_sub_block_size() {
+        if min_chunk_size > self.max_chunk_size {
             // Allocate memory block from the device.
             let chunk = self.alloc_chunk_from_device(device, block_size, clamped_count)?;
             return Ok((chunk, requested_chunk_size));

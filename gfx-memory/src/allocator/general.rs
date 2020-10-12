@@ -193,7 +193,9 @@ mod bit {
                 if self.index >= Self::TOTAL {
                     return None;
                 }
-                if self.index & (BitSet::GROUP_SIZE - 1) == 0 && (self.groups & (1 << (self.index / BitSet::GROUP_SIZE))) == 0 {
+                if self.index & (BitSet::GROUP_SIZE - 1) == 0
+                    && (self.groups & (1 << (self.index / BitSet::GROUP_SIZE))) == 0
+                {
                     self.index += BitSet::GROUP_SIZE;
                 } else {
                     if (self.mask & (1 << self.index)) != 0 {
@@ -383,6 +385,13 @@ impl<B: Backend> GeneralAllocator<B> {
             Some(&chunk_size) => {
                 // Allocate block for the chunk.
                 self.alloc_from_entry(device, chunk_size, 1, block_size)?
+            }
+            None if requested_chunk_size > self.min_device_allocation => {
+                // Allocate memory block from the device.
+                // Note: if we call into `alloc_block` instead, we are going to be
+                // going larger and larger blocks until we hit the ceiling.
+                let chunk = self.alloc_chunk_from_device(device, block_size, clamped_count)?;
+                return Ok((chunk, requested_chunk_size));
             }
             None => {
                 // Allocate a new block for the chunk.

@@ -225,9 +225,6 @@ use bit::BitSet;
 
 #[derive(Debug)]
 struct SizeEntry<B: Backend> {
-    /// Total count of allocated blocks with size corresponding to this entry.
-    total_blocks: Size,
-
     /// Bits per ready (non-exhausted) chunks with free blocks.
     ready_chunks: BitSet,
 
@@ -239,9 +236,16 @@ impl<B: Backend> Default for SizeEntry<B> {
     fn default() -> Self {
         SizeEntry {
             chunks: Default::default(),
-            total_blocks: 0,
             ready_chunks: Default::default(),
         }
+    }
+}
+
+impl<B: Backend> SizeEntry<B> {
+    fn next_block_count(&self, block_size: Size) -> u32 {
+        self.chunks.iter().fold(1u32, |max, (_, chunk)| {
+            (chunk.num_blocks(block_size) as u32).max(max)
+        }) * 2
     }
 }
 
@@ -479,9 +483,9 @@ impl<B: Backend> GeneralAllocator<B> {
             return Err(hal::device::OutOfMemory::Host.into());
         }
 
-        // This is an estimated block count, and it's a hint.
+        // The estimated block count is a hint.
         // The actual count will be clamped between MIN and MAX.
-        let estimated_block_count = size_entry.total_blocks as u32;
+        let estimated_block_count = size_entry.next_block_count(block_size);
         let (chunk, allocated) = self.alloc_chunk(device, block_size, estimated_block_count)?;
         log::trace!("\tChunk init mask: 0x{:x}", chunk.blocks);
         let size_entry = self.sizes.entry(block_size).or_default();
@@ -527,9 +531,8 @@ impl<B: Backend> GeneralAllocator<B> {
             align
         );
         let size_entry = self.sizes.entry(block_size).or_default();
-        size_entry.total_blocks += 1;
 
-        let overhead = (MIN_BLOCKS_PER_CHUNK as Size - 1) / size_entry.total_blocks;
+        let overhead = (MIN_BLOCKS_PER_CHUNK - 1) / size_entry.next_block_count(block_size);
         if overhead >= 1 && block_size >= LARGE_BLOCK_THRESHOLD {
             // this is chosen is such a way that the required `count`
             // is less than `MIN_BLOCKS_PER_CHUNK`.
@@ -539,7 +542,7 @@ impl<B: Backend> GeneralAllocator<B> {
             );
             let chunk_size = match self
                 .chunks
-                .range(ideal_chunk_size..block_size * overhead)
+                .range(ideal_chunk_size..block_size * overhead as Size)
                 .find(|&size| size % align == 0)
             {
                 Some(&size) => size,
@@ -730,10 +733,14 @@ impl<B: Backend> Chunk<B> {
         start..end
     }
 
+    fn num_blocks(&self, block_size: Size) -> Size {
+        let range = self.range();
+        ((range.end - range.start) / block_size).min(MAX_BLOCKS_PER_CHUNK as Size)
+    }
+
     /// Check if there are free blocks.
     fn is_unused(&self, block_size: Size) -> bool {
-        let range = self.range();
-        let blocks = ((range.end - range.start) / block_size).min(MAX_BLOCKS_PER_CHUNK as Size);
+        let blocks = self.num_blocks(block_size);
 
         let high_bit = 1 << (blocks - 1);
         let mask = (high_bit - 1) | high_bit;

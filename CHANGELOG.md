@@ -1,5 +1,10 @@
 # Change Log
 
+## memory-0.2.1 (12-10-2020)
+  - remove `hibitset` dependency
+  - fix overallocating memory when nothing is allocated yet
+  - fix overallocating memory after a few cycles of allocation
+
 ## memory-0.2, descriptor-0.2
   - update to gfx-hal-0.6
   - remove `colorful` dependency

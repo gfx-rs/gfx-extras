@@ -5,7 +5,11 @@ use crate::{
     memory::Memory,
     AtomSize, Size,
 };
+
+use bit_set::BitSet;
 use hal::{device::Device as _, Backend};
+use slab::Slab;
+
 use std::{
     collections::{BTreeSet, HashMap},
     hash::BuildHasherDefault,
@@ -130,111 +134,20 @@ pub struct GeneralAllocator<B: Backend> {
 unsafe impl<B: Backend> Send for GeneralAllocator<B> {}
 unsafe impl<B: Backend> Sync for GeneralAllocator<B> {}
 
-mod bit {
-    /// A hierarchical bitset hardcoded for 2 levels and only 64 bits.
-    #[derive(Debug, Default)]
-    pub struct BitSet {
-        mask: u64,
-        groups: u8,
-    }
-
-    impl BitSet {
-        const GROUP_SIZE: u32 = 8;
-
-        pub fn add(&mut self, index: u32) {
-            self.mask |= 1 << index;
-            self.groups |= 1 << (index / Self::GROUP_SIZE);
-        }
-
-        pub fn remove(&mut self, index: u32) {
-            self.mask &= !(1 << index);
-            let group_index = index / Self::GROUP_SIZE;
-            let group_mask = ((1 << Self::GROUP_SIZE) - 1) << (group_index * Self::GROUP_SIZE);
-            if self.mask & group_mask == 0 {
-                self.groups &= !(1 << group_index);
-            }
-        }
-
-        pub fn iter(&self) -> BitIterator {
-            BitIterator {
-                mask: self.mask,
-                groups: self.groups,
-                index: 0,
-            }
-        }
-    }
-
-    #[test]
-    fn test_bit_group() {
-        let mut bs = BitSet::default();
-        bs.add(13);
-        assert_eq!(bs.groups, 2);
-        bs.add(20);
-        assert_eq!(bs.groups, 6);
-        bs.add(23);
-        bs.remove(13);
-        assert_eq!(bs.groups, 4);
-    }
-
-    pub struct BitIterator {
-        mask: u64,
-        groups: u8,
-        index: u32,
-    }
-
-    impl BitIterator {
-        const TOTAL: u32 = std::mem::size_of::<super::Size>() as u32 * 8;
-    }
-
-    impl Iterator for BitIterator {
-        type Item = u32;
-        fn next(&mut self) -> Option<u32> {
-            let result = loop {
-                if self.index >= Self::TOTAL {
-                    return None;
-                }
-                if self.index & (BitSet::GROUP_SIZE - 1) == 0 && (self.groups & (1 << (self.index / BitSet::GROUP_SIZE))) == 0 {
-                    self.index += BitSet::GROUP_SIZE;
-                } else {
-                    if (self.mask & (1 << self.index)) != 0 {
-                        break self.index;
-                    }
-                    self.index += 1;
-                }
-            };
-            self.index += 1;
-            Some(result)
-        }
-    }
-
-    #[test]
-    fn test_bit_iter() {
-        let mut bs = BitSet::default();
-        let bits = &[2u32, 5, 24, 39, 40, 41, 42, 62];
-        for &index in bits {
-            bs.add(index);
-        }
-        let collected = bs.iter().collect::<Vec<_>>();
-        assert_eq!(&bits[..], &collected[..]);
-    }
-}
-
-use bit::BitSet;
-
 #[derive(Debug)]
 struct SizeEntry<B: Backend> {
     /// Bits per ready (non-exhausted) chunks with free blocks.
     ready_chunks: BitSet,
 
     /// List of chunks.
-    chunks: slab::Slab<Chunk<B>>,
+    chunks: Slab<Chunk<B>>,
 }
 
 impl<B: Backend> Default for SizeEntry<B> {
     fn default() -> Self {
         SizeEntry {
-            chunks: Default::default(),
-            ready_chunks: Default::default(),
+            chunks: Slab::new(),
+            ready_chunks: BitSet::new(),
         }
     }
 }
@@ -406,8 +319,8 @@ impl<B: Backend> GeneralAllocator<B> {
 
     /// Allocate blocks from particular chunk.
     fn alloc_from_chunk(
-        chunks: &mut slab::Slab<Chunk<B>>,
-        chunk_index: u32,
+        chunks: &mut Slab<Chunk<B>>,
+        chunk_index: usize,
         block_size: Size,
         count: u32,
         align: Size,
@@ -419,7 +332,7 @@ impl<B: Backend> GeneralAllocator<B> {
             chunk_index
         );
 
-        let chunk = &mut chunks[chunk_index as usize];
+        let chunk = &mut chunks[chunk_index];
         let block_index = chunk.acquire_blocks(count, block_size, align)?;
         let block_range = chunk.blocks_range(block_size, block_index, count);
 
@@ -430,7 +343,7 @@ impl<B: Backend> GeneralAllocator<B> {
             range: block_range,
             memory: Arc::clone(chunk.shared_memory()),
             block_index,
-            chunk_index,
+            chunk_index: chunk_index as u32,
             count,
             ptr: chunk.mapping_ptr().map(|ptr| unsafe {
                 let offset = (block_start - chunk.range().start) as isize;
@@ -487,7 +400,7 @@ impl<B: Backend> GeneralAllocator<B> {
         let (chunk, allocated) = self.alloc_chunk(device, block_size, estimated_block_count)?;
         log::trace!("\tChunk init mask: 0x{:x}", chunk.blocks);
         let size_entry = self.sizes.entry(block_size).or_default();
-        let chunk_index = size_entry.chunks.insert(chunk) as u32;
+        let chunk_index = size_entry.chunks.insert(chunk);
 
         let block = Self::alloc_from_chunk(
             &mut size_entry.chunks,
@@ -498,8 +411,8 @@ impl<B: Backend> GeneralAllocator<B> {
         )
         .expect("New chunk should yield blocks");
 
-        if !size_entry.chunks[chunk_index as usize].is_exhausted() {
-            size_entry.ready_chunks.add(chunk_index);
+        if !size_entry.chunks[chunk_index].is_exhausted() {
+            size_entry.ready_chunks.insert(chunk_index);
         }
 
         Ok((block, allocated))
@@ -593,19 +506,19 @@ impl<B: Backend> GeneralAllocator<B> {
             .sizes
             .get_mut(&block_size)
             .expect("Unable to get size entry from which block was allocated");
-        let chunk_index = block.chunk_index;
-        let chunk = &mut size_entry.chunks[chunk_index as usize];
+        let chunk_index = block.chunk_index as usize;
+        let chunk = &mut size_entry.chunks[chunk_index];
         let block_index = block.block_index;
         let count = block.count;
 
         chunk.release_blocks(block_index, count);
         if chunk.is_unused(block_size) {
             size_entry.ready_chunks.remove(chunk_index);
-            let chunk = size_entry.chunks.remove(chunk_index as usize);
+            let chunk = size_entry.chunks.remove(chunk_index);
             drop(block); // it keeps an Arc reference to the chunk
             self.free_chunk(device, chunk, block_size)
         } else {
-            size_entry.ready_chunks.add(chunk_index);
+            size_entry.ready_chunks.insert(chunk_index);
             0
         }
     }

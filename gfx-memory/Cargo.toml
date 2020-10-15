@@ -16,6 +16,7 @@ description = "gfx-hal memory allocator"
 [features]
 
 [dependencies]
+bit-set = "0.5"
 fxhash = "0.2"
 hal = { package = "gfx-hal", version = "0.6" }
 log = "0.4"

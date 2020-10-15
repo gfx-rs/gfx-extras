@@ -1,5 +1,8 @@
 # Change Log
 
+## memory-0.2.2 (15-10-2020)
+  - use `bit-set` crate
+
 ## memory-0.2.1 (12-10-2020)
   - remove `hibitset` dependency
   - fix overallocating memory when nothing is allocated yet

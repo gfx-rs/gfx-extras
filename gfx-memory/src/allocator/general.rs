@@ -556,7 +556,7 @@ impl<B: Backend> Drop for GeneralAllocator<B> {
             if !thread::panicking() {
                 assert_eq!(size.chunks.len(), 0, "SizeEntry({}) is still used", index);
             } else {
-                log::error!("Memory leak: SizeEntry({}) is still used", index);
+                log::warn!("Memory leak: SizeEntry({}) is still used", index);
             }
         }
     }
